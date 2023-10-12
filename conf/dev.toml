@@ -1,0 +1,8 @@
+mode = "local"
+debug = true
+
+[web]
+port = 8085
+
+[web.cors]
+allowAll= true

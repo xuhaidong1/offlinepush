@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: offlinepush-etcd
+spec:
+  selector:
+    app: offlinepush-etcd
+  ports:
+    - name: etcd
+      port: 2379
+      targetPort: 2379
+      nodePort: 32379
+  type: NodePort
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: offlinepush-etcd
+spec:
+  replicas: 1  # 设置 etcd 实例的副本数
+  selector:
+    matchLabels:
+      app: offlinepush-etcd
+  template:
+    metadata:
+      labels:
+        app: offlinepush-etcd
+    spec:
+      containers:
+        - name: offlinepush-etcd
+          image: quay.io/coreos/etcd:v3.5.0  # etcd 镜像的版本
+          ports:
+            - containerPort: 2379
+            - containerPort: 2380
+          command:
+            - etcd
+            - --data-dir=/etcd-data
+            - --name=offlinepush-etcd
+            - --initial-advertise-peer-urls=http://offlinepush-etcd:2380
+            - --listen-peer-urls=http://0.0.0.0:2380
+            - --advertise-client-urls=http://offlinepush-etcd:2379
+            - --listen-client-urls=http://0.0.0.0:2379

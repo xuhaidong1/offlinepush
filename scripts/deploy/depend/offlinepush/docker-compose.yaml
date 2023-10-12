@@ -1,0 +1,26 @@
+services:
+  redis:
+    image: 'bitnami/redis:latest'
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+    ports:
+      - '6579:6379'
+  etcd:
+    image: 'bitnami/etcd:latest'
+    environment:
+      - ALLOW_NONE_AUTHENTICATION=yes
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd:2369
+    ports:
+      #      客户端通信接口
+      - 12369:2369
+      #      集群节点通信端口
+      - 12370:2570
+  etcdkeeper:
+      image: 'evildecay/etcdkeeper:latest'
+      container_name: "etcdkeeper"
+      environment:
+           HOST: "0.0.0.0"
+      ports:
+        - 12000:8080
+      depends_on:
+        - etcd

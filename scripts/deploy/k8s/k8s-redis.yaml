@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: offlinepush-redis
+spec:
+  selector:
+    app: offlinepush-redis
+  ports:
+    - protocol: TCP
+      #暴露在k8s中的redis端口
+      port: 6579
+      #redis监听端口
+      targetPort: 6379
+      #暴露在外网的redis端口
+      nodePort: 30379
+  type: NodePort
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: offlinepush-redis
+  labels:
+    app: offlinepush-redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: offlinepush-redis
+  template:
+    metadata:
+      name: offlinepush-redis
+      labels:
+        app: offlinepush-redis
+    spec:
+      containers:
+        - name: offlinepush-redis
+          env:
+            - name: TZ
+              value: "Asia/Shanghai"
+          image: redis:latest
+          imagePullPolicy: IfNotPresent
+      restartPolicy: Always
