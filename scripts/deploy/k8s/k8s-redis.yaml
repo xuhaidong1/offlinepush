@@ -13,7 +13,7 @@ spec:
       targetPort: 6379
       #暴露在外网的redis端口
       nodePort: 30379
-  type: NodePort
+  type: LoadBalancer
 
 ---
 apiVersion: apps/v1

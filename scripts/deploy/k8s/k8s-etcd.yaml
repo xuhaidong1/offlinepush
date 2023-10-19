@@ -10,7 +10,7 @@ spec:
       port: 2379
       targetPort: 2379
       nodePort: 32379
-  type: NodePort
+  type: LoadBalancer
 ---
 apiVersion: apps/v1
 kind: Deployment

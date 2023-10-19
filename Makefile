@@ -103,8 +103,6 @@ deploy_k8s:
 	@kubectl apply -f  $(SCRIPTS_PATH)/deploy/k8s/k8s-etcd.yaml
 	@kubectl apply -f  $(SCRIPTS_PATH)/deploy/k8s/k8s-offlinepush.yaml
 
-
-
 replicas:
 	#先拿到 正在部署的版本
 	@kubectl describe deploy offlinepush|grep Image
