@@ -3,8 +3,9 @@ package repository
 import (
 	"context"
 
-	"github.com/ecodeclub/ecache"
 	"github.com/redis/go-redis/v9"
+
+	"github.com/xuhaidong1/go-generic-tools/ecache"
 	"github.com/xuhaidong1/offlinepush/config/pushconfig"
 	"github.com/xuhaidong1/offlinepush/internal/domain"
 )
@@ -13,9 +14,9 @@ type ProducerRepository interface {
 	// Store 暂存消息到本地缓存中
 	Store(ctx context.Context, msg domain.Message) error
 	// WriteBack 刷新本地缓存到存储介质中
-	WriteBack(ctx context.Context) error
+	WriteBack(ctx context.Context, businessName string) error
 	// WriteBackLeftTask 如果生产被打断，只把受影响的任务写到黑匣子，由下一任生产者启动时先根据黑匣子生产遗留任务
-	WriteBackLeftTask(ctx context.Context, cfg pushconfig.PushConfig) error
+	WriteBackLeftTask(ctx context.Context, businessName string) error
 	GetLeftTask(ctx context.Context) (pushconfig.PushConfig, error)
 }
 
@@ -33,12 +34,12 @@ func (p *producerRepository) Store(ctx context.Context, msg domain.Message) erro
 	panic("implement me")
 }
 
-func (p *producerRepository) WriteBack(ctx context.Context) error {
+func (p *producerRepository) WriteBack(ctx context.Context, key string) error {
 	// TODO implement me
 	panic("implement me")
 }
 
-func (p *producerRepository) WriteBackLeftTask(ctx context.Context, cfg pushconfig.PushConfig) error {
+func (p *producerRepository) WriteBackLeftTask(ctx context.Context, businessName string) error {
 	// TODO implement me
 	panic("implement me")
 }

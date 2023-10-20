@@ -12,7 +12,10 @@ import (
 	"github.com/xuhaidong1/offlinepush/config"
 )
 
-var ErrRefreshFailed = errors.New("续约失败")
+var (
+	ErrRefreshFailed = errors.New("续约失败")
+	ErrLockNotHold   = errs.ErrLockNotHold
+)
 
 type LockController struct {
 	lockClient *redisLock.Client
@@ -99,10 +102,10 @@ func (m *LockController) Apply(ctx context.Context) (*redisLock.Lock, error) {
 		case <-ticker.C:
 			l, err := m.lockClient.TryLock(ctx, m.lockConfig.LockKey, m.podName, m.lockConfig.Expiration)
 			// 抢锁失败
-			if err != nil && !errors.Is(err, errs.NewErrLockNotHold()) {
+			if err != nil && !errors.Is(err, ErrLockNotHold) {
 				return nil, err
 			}
-			if errors.Is(err, errs.NewErrLockNotHold()) {
+			if errors.Is(err, ErrLockNotHold) {
 				continue
 			}
 			return l, nil

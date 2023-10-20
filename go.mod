@@ -3,10 +3,10 @@ module github.com/xuhaidong1/offlinepush
 go 1.21.0
 
 require (
-	github.com/ecodeclub/ecache v0.0.0-20231013135934-10ff4bc65420
-	github.com/hashicorp/golang-lru/v2 v2.0.6
+	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/redis/go-redis/v9 v9.2.1
-	github.com/xuhaidong1/go-generic-tools v0.0.2
+	github.com/robfig/cron v1.2.0
+	github.com/xuhaidong1/go-generic-tools v0.0.5
 	go.etcd.io/etcd/api/v3 v3.5.9
 	go.etcd.io/etcd/client/v3 v3.5.9
 )

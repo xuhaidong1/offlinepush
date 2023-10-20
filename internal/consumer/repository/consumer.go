@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/ecodeclub/ecache"
 	"github.com/redis/go-redis/v9"
+	"github.com/xuhaidong1/go-generic-tools/ecache"
 	"github.com/xuhaidong1/offlinepush/internal/domain"
 )
 

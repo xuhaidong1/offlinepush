@@ -52,11 +52,11 @@ test -x $TARGET_COMMIT || chmod +x $TARGET_COMMIT
 echo "安装 goimports......"
 go install golang.org/x/tools/cmd/goimports@latest
 
-echo "安装 buf, protoc-gen-buf-breaking, protoc-gen-buf-lint......"
-go install github.com/bufbuild/buf/cmd/buf@v1.26.1
+#echo "安装 buf, protoc-gen-buf-breaking, protoc-gen-buf-lint......"
+#go install github.com/bufbuild/buf/cmd/buf@v1.26.1
 
 echo "安装 gofumpt......"
 go install mvdan.cc/gofumpt@latest
 
-echo "安装 protoc插件......"
-go install github.com/ecodeclub/grpc-local-client/cmd/protoc-gen-go-grpc-local-client@v0.0.2
+#echo "安装 protoc插件......"
+#go install github.com/ecodeclub/grpc-local-client/cmd/protoc-gen-go-grpc-local-client@v0.0.2

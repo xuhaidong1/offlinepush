@@ -8,10 +8,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ecodeclub/ecache/memory/lru"
-	"github.com/hashicorp/golang-lru/v2/simplelru"
 	"github.com/redis/go-redis/v9"
+	"github.com/xuhaidong1/offlinepush/config/pushconfig"
+	"github.com/xuhaidong1/offlinepush/internal/cron"
+
+	"github.com/hashicorp/golang-lru/v2/simplelru"
 	cond "github.com/xuhaidong1/go-generic-tools/container/queue"
+	"github.com/xuhaidong1/go-generic-tools/ecache/memory/lru"
 	"github.com/xuhaidong1/go-generic-tools/redis_lock"
 	"github.com/xuhaidong1/offlinepush/cmd/ioc"
 	"github.com/xuhaidong1/offlinepush/config"
@@ -30,7 +33,6 @@ import (
 // 并且可以开启环境变量 EGO_DEBUG=true
 func main() {
 	//--初始化三方依赖
-
 	etcd := ioc.InitEtcd()
 	rdb := ioc.InitRedis()
 	PingRedis(rdb)
@@ -59,12 +61,7 @@ func main() {
 	//----消费者初始化-----------------
 	consumeRepo := consumerrepo.NewConsumerRepository(rdb, localCache)
 	consumer.NewConsumeController(ctx, notifyChan, consumeRepo)
-	//----优雅关闭初始化------
-	gs := &GracefulClose{
-		Cancel:   cancel,
-		Registry: rg,
-		instance: ins,
-	}
+
 	//----分布式锁管理----
 	lockClient := redis_lock.NewClient(rdb)
 	// cond用于管理生产者/负载均衡组件的启动停止
@@ -74,11 +71,20 @@ func main() {
 	loadbalancer.NewLoadBalanceController(ctx, startCond, stopCond)
 	//----生产者控制器初始化------
 	producerRepo := producerrepo.NewProducerRepository(rdb, localCache)
-	producer.NewProduceController(ctx, startCond, stopCond, producerRepo)
+	taskChan := make(chan pushconfig.PushConfig, 10)
+	producer.NewProduceController(ctx, taskChan, startCond, stopCond, producerRepo)
+	//-----定时任务控制器初始化----
+	cronController := cron.NewCronController(taskChan)
 	//-----锁控制器初始化--------
 	lockController := lock.NewLockController(lockClient, podName, startCond, stopCond, config.StartConfig.Lock)
 	go lockController.Start(ctx)
-
+	//----优雅关闭初始化------
+	gs := &GracefulClose{
+		Cancel:         cancel,
+		Registry:       rg,
+		instance:       ins,
+		cronController: cronController,
+	}
 	log.Println("alive")
 	time.Sleep(time.Second * 5)
 	gs.Shutdown()
@@ -86,9 +92,10 @@ func main() {
 }
 
 type GracefulClose struct {
-	Cancel   context.CancelFunc
-	Registry registry.Registry
-	instance registry.ServiceInstance
+	Cancel         context.CancelFunc
+	Registry       registry.Registry
+	instance       registry.ServiceInstance
+	cronController *cron.CronController
 }
 
 func (s *GracefulClose) Shutdown() {
@@ -101,6 +108,7 @@ func (s *GracefulClose) Shutdown() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	s.cronController.Stop()
 }
 
 func GetPodName() string {

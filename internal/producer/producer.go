@@ -3,42 +3,53 @@ package producer
 import (
 	"context"
 	"log"
-	"sync"
+	"strconv"
 
+	"github.com/xuhaidong1/offlinepush/config/pushconfig"
+	"github.com/xuhaidong1/offlinepush/internal/domain"
 	"github.com/xuhaidong1/offlinepush/internal/producer/repository"
 )
 
 type Producer struct {
-	repo   repository.ProducerRepository
-	cancel context.CancelFunc
+	repo repository.ProducerRepository
 }
 
-func NewProducer(ctx context.Context, repo repository.ProducerRepository) *Producer {
-	produceCtx, cancel := context.WithCancel(ctx)
+func NewProducer(repo repository.ProducerRepository) *Producer {
 	p := &Producer{
-		cancel: cancel,
-		repo:   repo,
+		repo: repo,
 	}
-	go p.Produce(produceCtx)
 	return p
 }
 
-func (w *Producer) Produce(ctx context.Context) {
-	once := sync.Once{}
-	for {
-		select {
-		case <-ctx.Done():
-			log.Println("producer work结束")
-			return
-		default:
-			once.Do(func() {
-				log.Println("producer working")
-			})
-
+func (p *Producer) Produce(ctx context.Context, cfg pushconfig.PushConfig) {
+	log.Println("producer working")
+	for _, deviceType := range cfg.DeviceTypeList {
+		for i := 1; i <= 300000; i++ {
+			select {
+			case <-ctx.Done():
+				log.Println("producer work结束")
+				err := p.repo.WriteBackLeftTask(context.Background(), cfg.Business.Name)
+				if err != nil {
+					log.Fatalln("producer 写回受影响任务失败")
+				}
+				return
+			default:
+				msg := domain.Message{
+					Business: cfg.Business,
+					Device: domain.Device{
+						Type: deviceType,
+						ID:   deviceType + strconv.Itoa(i),
+					},
+				}
+				err := p.repo.Store(ctx, msg)
+				if err != nil {
+					log.Fatalln(err)
+				}
+			}
 		}
 	}
-}
-
-func (w *Producer) Stop() {
-	w.cancel()
+	err := p.repo.WriteBack(ctx, cfg.Business.Name)
+	if err != nil {
+		log.Fatalln("producer writeback fail")
+	}
 }
