@@ -116,35 +116,36 @@ func (m *LockController) Apply(ctx context.Context) (*redisLock.Lock, error) {
 	}
 }
 
-// Start 需要开启goroutine调用这个方法
-func (m *LockController) Start(ctx context.Context) {
-	lock, err := m.Apply(ctx)
-	if err != nil && !errors.Is(err, context.Canceled) {
-		log.Fatal(err)
+func (m *LockController) Run(ctx context.Context) {
+	go func() {
+		lock, err := m.Apply(ctx)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			log.Fatal(err)
+			return
+		}
+		if errors.Is(err, context.Canceled) {
+			return
+		}
+		m.l = lock
+		m.startCond.L.Lock()
+		m.startCond.Broadcast()
+		m.startCond.L.Unlock()
+		err = m.AutoRefresh(ctx, lock, time.Millisecond*300)
+		// todo 错误处理细化: 丢锁，手动停止，服务关闭
+		if errors.Is(err, ErrRefreshFailed) {
+			// log.Println("生产者续约失败，需要中断生产")
+			m.stopCond.L.Lock()
+			m.stopCond.Broadcast()
+			m.stopCond.L.Unlock()
+		}
+		err = m.l.Unlock(context.WithoutCancel(ctx))
+		m.l = nil
+		if err != nil {
+			panic(err)
+		}
+		log.Println("lock controller closed")
 		return
-	}
-	if errors.Is(err, context.Canceled) {
-		return
-	}
-	m.l = lock
-	m.startCond.L.Lock()
-	m.startCond.Broadcast()
-	m.startCond.L.Unlock()
-	err = m.AutoRefresh(ctx, lock, time.Millisecond*300)
-	// todo 错误处理细化: 丢锁，手动停止，服务关闭
-	if errors.Is(err, ErrRefreshFailed) {
-		// log.Println("生产者续约失败，需要中断生产")
-		m.stopCond.L.Lock()
-		m.stopCond.Broadcast()
-		m.stopCond.L.Unlock()
-	}
-	err = m.l.Unlock(context.WithoutCancel(ctx))
-	m.l = nil
-	if err != nil {
-		panic(err)
-	}
-	log.Println("lock controller closed")
-	return
+	}()
 }
 
 // Stop 手动停止抢锁，一般是在服务关闭时调用

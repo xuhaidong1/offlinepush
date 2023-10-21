@@ -16,7 +16,9 @@ type Consumer struct {
 }
 
 func NewConsumer(repo repository.ConsumerRepository) *Consumer {
-	return &Consumer{repo: repo}
+	return &Consumer{
+		repo: repo,
+	}
 }
 
 func (c *Consumer) Consume(ctx context.Context, bizName string) {

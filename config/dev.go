@@ -10,6 +10,7 @@ var StartConfig = Config{
 	Register: RegisterConfig{
 		ServiceName:    "offlinepush-service",
 		ConsumerPrefix: "offlinepush-consumer",
+		PodName:        GetPodName(),
 	},
 	Lock: LockConfig{
 		LockKey:         "offlinepush-lock",

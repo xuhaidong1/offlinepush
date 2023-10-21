@@ -8,7 +8,9 @@ var StartConfig = Config{
 	Redis: RedisConfig{Addr: "offlinepush-redis:6579", Password: ""},
 	Etcd:  EtcdConfig{Addr: "offlinepush-etcd:2379"},
 	Register: RegisterConfig{
-		ServiceName: "offlinepush-service",
+		ServiceName:    "offlinepush-service",
+		ConsumerPrefix: "offlinepush-consumer",
+		PodName:        GetPodName(),
 	},
 	Lock: LockConfig{
 		LockKey:         "offlinepush-lock",

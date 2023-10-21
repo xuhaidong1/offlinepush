@@ -7,17 +7,22 @@ import (
 	"sync"
 	"time"
 
+	"github.com/xuhaidong1/offlinepush/config"
+	"github.com/xuhaidong1/offlinepush/config/pushconfig"
+
 	"github.com/redis/go-redis/v9"
 	"github.com/xuhaidong1/offlinepush/internal/consumer/repository"
 	"github.com/xuhaidong1/offlinepush/pkg/registry"
 )
 
 type ConsumeController struct {
+	// 注册中心写 consumeController读出任务来
 	notifyChan <-chan registry.Event
-	// consumeChan 传递的是business name
+	// consumeController写任务 consumer读消费 传递的是business name
 	consumeChan chan string
 	consumers   *sync.Pool
 	repo        repository.ConsumerRepository
+	registry    registry.Registry
 }
 
 func NewConsumeController(ctx context.Context, ch <-chan registry.Event, repo repository.ConsumerRepository) *ConsumeController {
@@ -102,4 +107,20 @@ func (c *ConsumeController) Assign(ctx context.Context, bizName string) {
 	consumer := c.consumers.Get().(*Consumer)
 	consumer.Consume(ctx, bizName)
 	c.consumers.Put(consumer)
+	service, err := c.registry.ListService(ctx, config.StartConfig.Register.ServiceName+config.StartConfig.Register.PodName)
+	if err != nil {
+		log.Fatalln(err)
+		return
+	}
+	if len(service) != 1 {
+		log.Fatalln("消费者完成consume 查找本实例修改weight失败")
+		return
+	}
+	ins := service[0]
+	ins.Weight -= pushconfig.PushMap[bizName].Weight
+	err = c.registry.Register(ctx, ins)
+	if err != nil {
+		log.Fatalln(err)
+		return
+	}
 }

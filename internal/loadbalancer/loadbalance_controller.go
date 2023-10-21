@@ -4,19 +4,35 @@ import (
 	"context"
 	"log"
 	"sync"
+	"sync/atomic"
+
+	"github.com/xuhaidong1/offlinepush/config/pushconfig"
+	"github.com/xuhaidong1/offlinepush/pkg/registry"
 
 	cond "github.com/xuhaidong1/go-generic-tools/container/queue"
 )
 
 // LoadBalanceController 主要是对消费者的负载均衡
 type LoadBalanceController struct {
-	startCond *cond.CondAtomic
-	stopCond  *cond.CondAtomic
-	worker    *LoadBalancer
+	// producer写 loadbalancer读
+	notifyChan   <-chan pushconfig.PushConfig
+	startCond    *cond.CondAtomic
+	stopCond     *cond.CondAtomic
+	loadBalancer *LoadBalancer // 一个loadbalancer就够了
+	isUse        int32
+	cancel       context.CancelFunc
+	registry     registry.Registry
 }
 
-func NewLoadBalanceController(ctx context.Context, start, stop *cond.CondAtomic) *LoadBalanceController {
-	l := &LoadBalanceController{startCond: start, stopCond: stop}
+func NewLoadBalanceController(ctx context.Context, notifyChan <-chan pushconfig.PushConfig, start, stop *cond.CondAtomic, registry registry.Registry) *LoadBalanceController {
+	l := &LoadBalanceController{
+		notifyChan:   notifyChan,
+		startCond:    start,
+		stopCond:     stop,
+		loadBalancer: NewLoadBalancer(registry),
+		isUse:        int32(0),
+		registry:     registry,
+	}
 	wg := &sync.WaitGroup{}
 	wg.Add(2)
 	go l.ListenStartCond(ctx, wg)
@@ -32,12 +48,14 @@ func (l *LoadBalanceController) ListenStartCond(ctx context.Context, wg *sync.Wa
 		err := l.startCond.WaitWithTimeout(ctx)
 		l.startCond.L.Unlock()
 		if err != nil {
-			log.Println("loadbalancer listenStartCond closing")
+			log.Println("LoadBalanceController listenStartCond closing")
 			return
 		}
-		if l.worker == nil {
-			l.worker = NewLoadBalancer(ctx)
+		ok := atomic.CompareAndSwapInt32(&l.isUse, int32(0), int32(1))
+		if !ok {
+			log.Fatalln("LoadBalanceController start fail")
 		}
+		go l.WatchNotifyChan(ctx)
 	}
 }
 
@@ -48,12 +66,37 @@ func (l *LoadBalanceController) ListenStopCond(ctx context.Context, wg *sync.Wai
 		err := l.stopCond.WaitWithTimeout(ctx)
 		l.stopCond.L.Unlock()
 		if err != nil {
-			log.Println("loadbalancer listenStopCond closing")
+			log.Println("LoadBalanceController listenStopCond closing")
+			l.CancelLoadBalance()
 			return
 		}
-		if l.worker != nil {
-			l.worker.Stop()
-			l.worker = nil
+		ok := atomic.CompareAndSwapInt32(&l.isUse, int32(1), int32(0))
+		if !ok {
+			log.Fatalln("LoadBalanceController stop fail")
 		}
+		l.CancelLoadBalance()
+	}
+}
+
+func (l *LoadBalanceController) WatchNotifyChan(ctx context.Context) {
+	watchCtx, cancel := context.WithCancel(ctx)
+	l.cancel = cancel
+	for {
+		select {
+		case <-watchCtx.Done():
+			log.Println("LoadBalanceController WatchNotifyChan closing")
+			return
+		case cfg := <-l.notifyChan:
+			if atomic.LoadInt32(&l.isUse) == int32(1) {
+				l.loadBalancer.SelectConsumer(cfg)
+			}
+		}
+	}
+}
+
+func (l *LoadBalanceController) CancelLoadBalance() {
+	if l.cancel != nil {
+		l.cancel()
+		l.cancel = nil
 	}
 }

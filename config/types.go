@@ -1,6 +1,8 @@
 package config
 
 import (
+	"fmt"
+	"os"
 	"time"
 )
 
@@ -23,6 +25,7 @@ type RedisConfig struct {
 type RegisterConfig struct {
 	ServiceName    string
 	ConsumerPrefix string
+	PodName        string
 }
 
 type LockConfig struct {
@@ -34,4 +37,12 @@ type LockConfig struct {
 	RefreshInterval time.Duration
 	// redis lua脚本执行超时时间
 	Timeout time.Duration
+}
+
+func GetPodName() string {
+	podName, err := os.Hostname()
+	if err != nil {
+		panic(fmt.Sprintf("Error getting Pod name: %v", err))
+	}
+	return podName
 }

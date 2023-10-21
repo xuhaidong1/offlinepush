@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"sync"
 	"time"
 
@@ -42,47 +41,48 @@ func main() {
 	localCache := lru.NewCache(simpleLru)
 
 	//----实例注册-------
-	podName := GetPodName()
+	podName := config.GetPodName()
 	rg, err := etcd2.NewRegistry(etcd)
 	if err != nil {
 		panic(err)
 	}
-	ins, err := RegisterService(ctx, rg)
+	ins, consumeIns, err := RegisterService(ctx, rg)
 	if err != nil {
 		panic(err)
 	}
+	//-------通道创建------
 	// 消费者只订阅自己
-	consumeInsName := config.StartConfig.Register.ServiceName + GetPodName()
-	notifyChan, err := rg.Subscribe(consumeInsName)
+	notifyConsumerChan, err := rg.Subscribe(consumeIns.ServiceName)
 	if err != nil {
 		panic(err)
 	}
-
+	notifyProducerChan := make(chan pushconfig.PushConfig, 10)
+	notifyLoadBalancerChan := make(chan pushconfig.PushConfig, 10)
 	//----消费者初始化-----------------
 	consumeRepo := consumerrepo.NewConsumerRepository(rdb, localCache)
-	consumer.NewConsumeController(ctx, notifyChan, consumeRepo)
+	consumer.NewConsumeController(ctx, notifyConsumerChan, consumeRepo)
 
 	//----分布式锁管理----
 	lockClient := redis_lock.NewClient(rdb)
 	// cond用于管理生产者/负载均衡组件的启动停止
 	startCond := cond.NewCondAtomic(&sync.Mutex{})
 	stopCond := cond.NewCondAtomic(&sync.Mutex{})
-	//----负载均衡器初始化----
-	loadbalancer.NewLoadBalanceController(ctx, startCond, stopCond)
+	//----负载均衡控制器初始化----
+	loadbalancer.NewLoadBalanceController(ctx, notifyLoadBalancerChan, startCond, stopCond, rg)
 	//----生产者控制器初始化------
 	producerRepo := producerrepo.NewProducerRepository(rdb, localCache)
-	taskChan := make(chan pushconfig.PushConfig, 10)
-	producer.NewProduceController(ctx, taskChan, startCond, stopCond, producerRepo)
+	producer.NewProduceController(ctx, notifyProducerChan, notifyLoadBalancerChan, startCond, stopCond, producerRepo)
 	//-----定时任务控制器初始化----
-	cronController := cron.NewCronController(taskChan)
+	cronController := cron.NewCronController(notifyProducerChan)
 	//-----锁控制器初始化--------
 	lockController := lock.NewLockController(lockClient, podName, startCond, stopCond, config.StartConfig.Lock)
-	go lockController.Start(ctx)
+	lockController.Run(ctx)
 	//----优雅关闭初始化------
 	gs := &GracefulClose{
 		Cancel:         cancel,
 		Registry:       rg,
 		instance:       ins,
+		consumeIns:     consumeIns,
 		cronController: cronController,
 	}
 	log.Println("alive")
@@ -95,6 +95,7 @@ type GracefulClose struct {
 	Cancel         context.CancelFunc
 	Registry       registry.Registry
 	instance       registry.ServiceInstance
+	consumeIns     registry.ServiceInstance
 	cronController *cron.CronController
 }
 
@@ -104,19 +105,15 @@ func (s *GracefulClose) Shutdown() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	err = s.Registry.UnRegister(context.Background(), s.consumeIns)
+	if err != nil {
+		log.Fatal(err)
+	}
 	err = s.Registry.Close()
 	if err != nil {
 		log.Fatal(err)
 	}
 	s.cronController.Stop()
-}
-
-func GetPodName() string {
-	podName, err := os.Hostname()
-	if err != nil {
-		panic(fmt.Sprintf("Error getting Pod name: %v", err))
-	}
-	return podName
 }
 
 func PingRedis(redisCmd redis.Cmdable) {
@@ -153,16 +150,25 @@ func PingEtcd(etcd *clientv3.Client) {
 	}
 }
 
-func RegisterService(ctx context.Context, rg registry.Registry) (registry.ServiceInstance, error) {
-	ins := registry.ServiceInstance{
-		Address:     GetPodName(),
-		ServiceName: config.StartConfig.Register.ServiceName + GetPodName(),
+func RegisterService(ctx context.Context, rg registry.Registry) (ins, consumeIns registry.ServiceInstance, err error) {
+	ins = registry.ServiceInstance{
+		Address:     config.StartConfig.Register.PodName,
+		ServiceName: config.StartConfig.Register.ServiceName + config.StartConfig.Register.PodName,
 		Weight:      10000,
 	}
 	// 这个注册的是服务，生产者调用服务列表的key：config.StartConfig.Register.ServiceName，根据服务weight确定通知的实例。
-	err := rg.Register(ctx, ins)
+	err = rg.Register(ctx, ins)
 	if err != nil {
-		return registry.ServiceInstance{}, err
+		return registry.ServiceInstance{}, registry.ServiceInstance{}, err
 	}
-	return ins, err
+	consumeIns = registry.ServiceInstance{
+		Address:     config.StartConfig.Register.PodName,
+		ServiceName: config.StartConfig.Register.ConsumerPrefix + config.StartConfig.Register.PodName,
+	}
+	// 这个注册的是消费者抽象，生产者准备好消息-负载均衡-通知这个抽象-消费者收到通知
+	err = rg.Register(ctx, consumeIns)
+	if err != nil {
+		return registry.ServiceInstance{}, registry.ServiceInstance{}, err
+	}
+	return ins, consumeIns, err
 }

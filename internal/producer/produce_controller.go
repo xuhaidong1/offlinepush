@@ -13,20 +13,25 @@ import (
 )
 
 type ProduceController struct {
-	taskChan    <-chan pushconfig.PushConfig
-	startCond   *cond.CondAtomic
-	stopCond    *cond.CondAtomic
-	producers   *sync.Pool
-	repo        repository.ProducerRepository
-	isUse       int32
-	CancelFuncs *sync.Map
+	// cron 写 producer读
+	notifyProducer     <-chan pushconfig.PushConfig
+	notifyLoadBalancer chan<- pushconfig.PushConfig
+	startCond          *cond.CondAtomic
+	stopCond           *cond.CondAtomic
+	producers          *sync.Pool
+	repo               repository.ProducerRepository
+	isUse              int32
+	CancelFuncs        *sync.Map
 }
 
-func NewProduceController(ctx context.Context, produceChan <-chan pushconfig.PushConfig, start, stop *cond.CondAtomic, repo repository.ProducerRepository) *ProduceController {
+func NewProduceController(ctx context.Context, notifyProducer <-chan pushconfig.PushConfig, notifyLoadBalancer chan<- pushconfig.PushConfig,
+	start, stop *cond.CondAtomic, repo repository.ProducerRepository,
+) *ProduceController {
 	p := &ProduceController{
-		taskChan:  produceChan,
-		startCond: start,
-		stopCond:  stop,
+		notifyProducer:     notifyProducer,
+		notifyLoadBalancer: notifyLoadBalancer,
+		startCond:          start,
+		stopCond:           stop,
 		producers: &sync.Pool{New: func() any {
 			return NewProducer(repo)
 		}},
@@ -38,7 +43,7 @@ func NewProduceController(ctx context.Context, produceChan <-chan pushconfig.Pus
 	wg.Add(3)
 	go p.ListenStartCond(ctx, wg)
 	go p.ListenStopCond(ctx, wg)
-	go p.WatchProduceChan(ctx, wg)
+	go p.WatchTask(ctx, wg)
 	wg.Wait()
 	return p
 }
@@ -80,14 +85,14 @@ func (p *ProduceController) ListenStopCond(ctx context.Context, wg *sync.WaitGro
 	}
 }
 
-func (p *ProduceController) WatchProduceChan(ctx context.Context, wg *sync.WaitGroup) {
+func (p *ProduceController) WatchTask(ctx context.Context, wg *sync.WaitGroup) {
 	wg.Done()
 	for {
 		select {
 		case <-ctx.Done():
 			log.Println("ProduceController WatchProduceChan closing")
 			return
-		case cfg := <-p.taskChan:
+		case cfg := <-p.notifyProducer:
 			if atomic.LoadInt32(&p.isUse) == int32(1) {
 				go p.Assign(ctx, cfg)
 			}
