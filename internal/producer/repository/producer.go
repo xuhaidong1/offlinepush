@@ -2,12 +2,19 @@ package repository
 
 import (
 	"context"
+	"errors"
+	"time"
 
 	"github.com/redis/go-redis/v9"
-
-	"github.com/xuhaidong1/go-generic-tools/ecache"
+	"github.com/xuhaidong1/offlinepush/config"
 	"github.com/xuhaidong1/offlinepush/config/pushconfig"
+	"github.com/xuhaidong1/offlinepush/internal/consumer/repository/cache"
 	"github.com/xuhaidong1/offlinepush/internal/domain"
+)
+
+var (
+	ErrKeyNotExist = redis.Nil
+	NoMessage      = cache.ErrNoMessage
 )
 
 type ProducerRepository interface {
@@ -21,37 +28,94 @@ type ProducerRepository interface {
 }
 
 type producerRepository struct {
-	rdb        redis.Cmdable
-	localCache ecache.Cache
+	local cache.LocalCache
+	rdb   redis.Cmdable
 }
 
-func NewProducerRepository(rdb redis.Cmdable, localCache ecache.Cache) ProducerRepository {
-	return &producerRepository{rdb: rdb, localCache: localCache}
+func NewProducerRepository(local cache.LocalCache, rdb redis.Cmdable) ProducerRepository {
+	return &producerRepository{rdb: rdb, local: local}
 }
 
-func (p *producerRepository) Store(ctx context.Context, msg domain.Message) error {
-	// TODO implement me
-	panic("implement me")
+func (r *producerRepository) Store(ctx context.Context, msg domain.Message) error {
+	r.local.RPush(ctx, msg)
+	return nil
 }
 
-func (p *producerRepository) WriteBack(ctx context.Context, key string) error {
-	// TODO implement me
-	panic("implement me")
+func (r *producerRepository) WriteBack(ctx context.Context, businessName string) error {
+	task := NewTask(businessName)
+	for {
+		msg, err := r.local.LPop(ctx, businessName)
+		if err != nil && !errors.Is(err, NoMessage) {
+			return err
+		}
+		if errors.Is(err, NoMessage) {
+			break
+		}
+		task.Add(msg)
+	}
+	_, err := r.rdb.SAdd(ctx, businessName, task.Keys(businessName)).Result()
+	if err != nil {
+		return err
+	}
+	//
+	//taskKey, err := r.rdb.SRandMember(ctx, businessName).Result()
+	//if errors.Is(err, redis.Nil) {
+	//	log.Fatalln("?????")
+	//}
+	//log.Println(taskKey)
+	//time.Sleep(time.Hour)
+
+	for deviceType, idList := range task.DeviceMap {
+		redisKey := businessName + ":" + deviceType
+		_, err = r.rdb.LPush(ctx, redisKey, idList).Result()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func (p *producerRepository) WriteBackLeftTask(ctx context.Context, businessName string) error {
-	// TODO implement me
-	panic("implement me")
+func (r *producerRepository) WriteBackLeftTask(ctx context.Context, businessName string) error {
+	return r.rdb.Set(ctx, config.StartConfig.Redis.ProducerLeftTaskKey, businessName, time.Minute).Err()
 }
 
-func (p *producerRepository) GetLeftTask(ctx context.Context) (pushconfig.PushConfig, error) {
-	// TODO implement me
-	panic("implement me")
+func (r *producerRepository) GetLeftTask(ctx context.Context) (pushconfig.PushConfig, error) {
+	biz, err := r.rdb.Get(ctx, config.StartConfig.Redis.ProducerLeftTaskKey).Result()
+	if err != nil && errors.Is(err, ErrKeyNotExist) {
+		return pushconfig.PushConfig{}, ErrKeyNotExist
+	}
+	return pushconfig.PushMap[biz], nil
 }
 
-type TaskEntity struct {
-	BusinessName string   `json:"business_name"`
-	DeviceType   string   `json:"device_type"`
-	DeviceIDList []string `json:"device_id_list"`
-	Qps          int      `json:"qps"`
+type Task struct {
+	BusinessName string
+	// map key: deviceType val:id列表
+	DeviceMap map[string][]string
+	// 推送qps 根据设备数量，限制时间计算得出
+	// Qps int `json:"qps"`
+}
+
+func NewTask(businessName string) *Task {
+	return &Task{
+		BusinessName: businessName,
+		DeviceMap:    make(map[string][]string),
+	}
+}
+
+func (t *Task) Add(msg domain.Message) {
+	if m, ok := t.DeviceMap[msg.Device.Type]; ok {
+		m = append(m, msg.Device.ID)
+		t.DeviceMap[msg.Device.Type] = m
+	} else {
+		mp := make([]string, 0, 1024)
+		mp = append(mp, msg.Device.ID)
+		t.DeviceMap[msg.Device.Type] = mp
+	}
+}
+
+func (t *Task) Keys(biz string) (res []string) {
+	for k := range t.DeviceMap {
+		res = append(res, biz+":"+k)
+	}
+	return
 }

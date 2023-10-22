@@ -20,6 +20,9 @@ type EtcdConfig struct {
 type RedisConfig struct {
 	Addr     string
 	Password string
+	// 消费者/生产者被打断而没完成的生产/消费任务的key
+	ConsumerLeftMessageKey string
+	ProducerLeftTaskKey    string
 }
 
 type RegisterConfig struct {

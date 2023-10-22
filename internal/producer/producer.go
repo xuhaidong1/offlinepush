@@ -24,7 +24,7 @@ func NewProducer(repo repository.ProducerRepository) *Producer {
 func (p *Producer) Produce(ctx context.Context, cfg pushconfig.PushConfig) {
 	log.Println("producer working")
 	for _, deviceType := range cfg.DeviceTypeList {
-		for i := 1; i <= 300000; i++ {
+		for i := 1; i <= 300; i++ {
 			select {
 			case <-ctx.Done():
 				log.Println("producer work结束")

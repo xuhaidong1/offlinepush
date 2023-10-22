@@ -59,6 +59,7 @@ func (p *ProduceController) ListenStartCond(ctx context.Context, wg *sync.WaitGr
 			return
 		}
 		ok := atomic.CompareAndSwapInt32(&p.isUse, int32(0), int32(1))
+		log.Println("成为了生产者")
 		if !ok {
 			log.Fatalln("ProduceController start fail")
 		}
@@ -95,6 +96,7 @@ func (p *ProduceController) WatchTask(ctx context.Context, wg *sync.WaitGroup) {
 		case cfg := <-p.notifyProducer:
 			if atomic.LoadInt32(&p.isUse) == int32(1) {
 				go p.Assign(ctx, cfg)
+				log.Println("produce ok")
 			}
 		}
 	}
@@ -111,6 +113,7 @@ func (p *ProduceController) Assign(ctx context.Context, cfg pushconfig.PushConfi
 	p.producers.Put(producer)
 	p.CancelFuncs.Delete(cfg.Business.Name)
 	cancel()
+	p.notifyLoadBalancer <- cfg
 }
 
 func (p *ProduceController) CancelProduce() {

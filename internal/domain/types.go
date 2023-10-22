@@ -2,20 +2,20 @@ package domain
 
 // Business 业务名字，域名
 type Business struct {
-	Name   string
-	Domain string
+	Name   string `json:"name"`
+	Domain string `json:"domain"`
 }
 
 // Device 设备类型，id
 type Device struct {
-	Type string
-	ID   string
+	Type string `json:"type"`
+	ID   string `json:"id"`
 }
 
 // Message 消息定义
 type Message struct {
-	Business Business
-	Device   Device
+	Business Business `json:"business"`
+	Device   Device   `json:"device"`
 }
 
 // Task 生产者生产的消息列表

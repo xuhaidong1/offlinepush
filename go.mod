@@ -9,6 +9,7 @@ require (
 	github.com/xuhaidong1/go-generic-tools v0.0.5
 	go.etcd.io/etcd/api/v3 v3.5.9
 	go.etcd.io/etcd/client/v3 v3.5.9
+	golang.org/x/sync v0.1.0
 )
 
 require (

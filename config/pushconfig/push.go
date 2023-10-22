@@ -15,7 +15,7 @@ var PushMap = map[string]PushConfig{
 	"reboot": {
 		Business:       domain.Business{Name: "reboot"},
 		DeviceTypeList: []string{"iHome1", "iHome1S", "iHome1C", "iHome1X"},
-		Cron:           "0 0 3 * * *",
+		Cron:           "50 45 17 * * *",
 		Weight:         400,
 	},
 	"weather": {

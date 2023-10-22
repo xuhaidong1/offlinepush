@@ -5,8 +5,13 @@ package config
 import "time"
 
 var StartConfig = Config{
-	Redis: RedisConfig{Addr: "offlinepush-redis:6579", Password: ""},
-	Etcd:  EtcdConfig{Addr: "offlinepush-etcd:2379"},
+	Redis: RedisConfig{
+		Addr:                   "offlinepush-redis:6579",
+		Password:               "",
+		ConsumerLeftMessageKey: "offlinepush:consumer:leftmessage",
+		ProducerLeftTaskKey:    "offlinepush:producer:lefttask",
+	},
+	Etcd: EtcdConfig{Addr: "offlinepush-etcd:2379"},
 	Register: RegisterConfig{
 		ServiceName:    "offlinepush-service",
 		ConsumerPrefix: "offlinepush-consumer",
