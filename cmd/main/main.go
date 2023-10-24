@@ -2,12 +2,13 @@ package main
 
 import (
 	"context"
-	"log"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
 	"time"
+
+	"go.uber.org/zap"
 
 	"github.com/xuhaidong1/offlinepush/internal/consumer/repository/cache"
 
@@ -74,18 +75,17 @@ func main() {
 	lockController := lock.NewLockController(lockClient, podName, startCond, stopCond, config.StartConfig.Lock)
 	lockController.Run(ctx)
 	//----优雅关闭初始化------
-	gs := &GracefulClose{
+	gs := &GracefulShutdown{
 		Cancel:         cancel,
 		Registry:       rg,
 		instance:       ins,
 		consumeIns:     consumeIns,
 		cronController: cronController,
+		logger:         ioc.Logger,
 	}
-	log.Println("alive")
 	time.Sleep(time.Second * 2)
 	go func() {
 		notifyProducerChan <- pushconfig.PushMap["reboot"]
-		log.Println("发送了任务")
 	}()
 
 	ch := make(chan os.Signal, 1)
@@ -94,29 +94,32 @@ func main() {
 	gs.Shutdown()
 }
 
-type GracefulClose struct {
+type GracefulShutdown struct {
 	Cancel         context.CancelFunc
 	Registry       registry.Registry
 	instance       registry.ServiceInstance
 	consumeIns     registry.ServiceInstance
 	cronController *cron.CronController
+	logger         *zap.Logger
 }
 
-func (s *GracefulClose) Shutdown() {
+func (s *GracefulShutdown) Shutdown() {
 	s.Cancel()
+	s.logger.Info("GracefulShutdown", zap.String("GracefulShutdown", "UnRegister"))
 	err := s.Registry.UnRegister(context.Background(), s.instance)
 	if err != nil {
-		log.Fatal(err)
+		s.logger.Error("GracefulShutdown", zap.Error(err))
 	}
 	err = s.Registry.UnRegister(context.Background(), s.consumeIns)
 	if err != nil {
-		log.Fatal(err)
+		s.logger.Error("GracefulShutdown", zap.Error(err))
 	}
 	err = s.Registry.Close()
 	if err != nil {
-		log.Fatal(err)
+		s.logger.Error("GracefulShutdown", zap.Error(err))
 	}
 	s.cronController.Stop()
+	time.Sleep(time.Second)
 }
 
 func RegisterService(ctx context.Context, rg registry.Registry) (ins, consumeIns registry.ServiceInstance, err error) {

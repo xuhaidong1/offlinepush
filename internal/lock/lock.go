@@ -3,8 +3,10 @@ package lock
 import (
 	"context"
 	"errors"
-	"log"
 	"time"
+
+	"github.com/xuhaidong1/offlinepush/cmd/ioc"
+	"go.uber.org/zap"
 
 	cond "github.com/xuhaidong1/go-generic-tools/container/queue"
 	redisLock "github.com/xuhaidong1/go-generic-tools/redis_lock"
@@ -27,10 +29,20 @@ type LockController struct {
 	// 根据有没有锁/推送开关开没开 控制业务（produceworker，loadbalanceworker）的启动停止
 	startCond *cond.CondAtomic
 	stopCond  *cond.CondAtomic
+	logger    *zap.Logger
 }
 
-func NewLockController(lockClient *redisLock.Client, podName string, startCond, stopCond *cond.CondAtomic, lc config.LockConfig) *LockController {
-	return &LockController{lockClient: lockClient, podName: podName, startCond: startCond, stopCond: stopCond, lockConfig: lc}
+func NewLockController(lockClient *redisLock.Client, podName string,
+	startCond, stopCond *cond.CondAtomic, lc config.LockConfig,
+) *LockController {
+	return &LockController{
+		lockClient: lockClient,
+		podName:    podName,
+		startCond:  startCond,
+		stopCond:   stopCond,
+		lockConfig: lc,
+		logger:     ioc.Logger,
+	}
 }
 
 // AutoRefresh 需要在外面开启goroutine
@@ -117,10 +129,11 @@ func (m *LockController) Apply(ctx context.Context) (*redisLock.Lock, error) {
 }
 
 func (m *LockController) Run(ctx context.Context) {
+	m.logger.Info("LockController", zap.String("status", "start"))
 	go func() {
 		lock, err := m.Apply(ctx)
 		if err != nil && !errors.Is(err, context.Canceled) {
-			log.Fatal(err)
+			m.logger.Error("LockController", zap.String("Run", "Apply"), zap.Error(err))
 			return
 		}
 		if errors.Is(err, context.Canceled) {
@@ -133,7 +146,7 @@ func (m *LockController) Run(ctx context.Context) {
 		err = m.AutoRefresh(ctx, lock, time.Millisecond*300)
 		// todo 错误处理细化: 丢锁，手动停止，服务关闭
 		if errors.Is(err, ErrRefreshFailed) {
-			// log.Println("生产者续约失败，需要中断生产")
+			m.logger.Warn("LockController", zap.String("refresh", "failed"))
 			m.stopCond.L.Lock()
 			m.stopCond.Broadcast()
 			m.stopCond.L.Unlock()
@@ -141,9 +154,9 @@ func (m *LockController) Run(ctx context.Context) {
 		err = m.l.Unlock(context.WithoutCancel(ctx))
 		m.l = nil
 		if err != nil {
-			panic(err)
+			m.logger.Error("LockController", zap.String("Run", "Unlock"), zap.Error(err))
 		}
-		log.Println("lock controller closed")
+		m.logger.Info("LockController", zap.String("status", "closed"))
 		return
 	}()
 }

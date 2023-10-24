@@ -1,15 +1,16 @@
 package cron
 
 import (
-	"log"
-
 	robfig "github.com/robfig/cron"
+	"github.com/xuhaidong1/offlinepush/cmd/ioc"
 	"github.com/xuhaidong1/offlinepush/config/pushconfig"
+	"go.uber.org/zap"
 )
 
 type CronController struct {
 	cron        *robfig.Cron
 	produceChan chan<- pushconfig.PushConfig
+	logger      *zap.Logger
 }
 
 func NewCronController(produceChan chan<- pushconfig.PushConfig) *CronController {
@@ -18,8 +19,10 @@ func NewCronController(produceChan chan<- pushconfig.PushConfig) *CronController
 	res := &CronController{
 		cron:        c,
 		produceChan: produceChan,
+		logger:      ioc.Logger,
 	}
 	res.InitConfig()
+	res.logger.Info("CronController", zap.String("status", "start"))
 	return res
 }
 
@@ -28,11 +31,12 @@ func (c *CronController) AddConfig(crontab string, config pushconfig.PushConfig)
 		c.produceChan <- config
 	})
 	if err != nil {
-		log.Fatalln(err)
+		c.logger.Error("CronController", zap.Error(err))
 	}
 }
 
 func (c *CronController) Stop() {
+	c.logger.Info("CronController", zap.String("status", "closed"))
 	c.cron.Stop()
 }
 

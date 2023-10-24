@@ -1,7 +1,12 @@
 package repository
 
 import (
+	"context"
+	"log"
 	"testing"
+	"time"
+
+	"golang.org/x/sync/errgroup"
 )
 
 func Test_producerRepository_WriteBackLeftTask(t *testing.T) {
@@ -40,4 +45,32 @@ func Test_producerRepository_WriteBackLeftTask(t *testing.T) {
 	//if err != nil {
 	//	log.Fatalln(msgg)
 	//}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(time.Second * 5)
+		cancel()
+	}()
+	eg, egctx := errgroup.WithContext(ctx)
+	for i := 0; i < 5; i++ {
+		eg.Go(func() error {
+			return f(egctx)
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		log.Println("errr")
+	} else {
+		log.Println("ok")
+	}
+}
+
+func f(ctx context.Context) error {
+	log.Println("xx")
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+
+		}
+	}
 }

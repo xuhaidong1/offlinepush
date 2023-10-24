@@ -2,7 +2,6 @@ package ioc
 
 import (
 	"context"
-	"fmt"
 	"github.com/xuhaidong1/offlinepush/config"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"sync"
@@ -39,12 +38,12 @@ func PingEtcd(etcd *clientv3.Client) {
 		panic(err)
 	}
 	// 执行 GET 操作
-	resp, err := etcd.Get(ctx, "mykey")
+	_, err = etcd.Get(ctx, "mykey")
 	if err != nil {
 		panic(err)
 	}
 	// 打印获取到的值
-	for _, kv := range resp.Kvs {
-		fmt.Printf("Key: %s, Value: %s\n", kv.Key, kv.Value)
-	}
+	//for _, kv := range resp.Kvs {
+	//	fmt.Printf("Key: %s, Value: %s\n", kv.Key, kv.Value)
+	//}
 }

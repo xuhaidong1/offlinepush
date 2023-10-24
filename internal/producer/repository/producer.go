@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/xuhaidong1/offlinepush/config"
@@ -57,14 +56,6 @@ func (r *producerRepository) WriteBack(ctx context.Context, businessName string)
 	if err != nil {
 		return err
 	}
-	//
-	//taskKey, err := r.rdb.SRandMember(ctx, businessName).Result()
-	//if errors.Is(err, redis.Nil) {
-	//	log.Fatalln("?????")
-	//}
-	//log.Println(taskKey)
-	//time.Sleep(time.Hour)
-
 	for deviceType, idList := range task.DeviceMap {
 		redisKey := businessName + ":" + deviceType
 		_, err = r.rdb.LPush(ctx, redisKey, idList).Result()
@@ -76,11 +67,11 @@ func (r *producerRepository) WriteBack(ctx context.Context, businessName string)
 }
 
 func (r *producerRepository) WriteBackLeftTask(ctx context.Context, businessName string) error {
-	return r.rdb.Set(ctx, config.StartConfig.Redis.ProducerLeftTaskKey, businessName, time.Minute).Err()
+	return r.rdb.RPush(ctx, config.StartConfig.Redis.ProducerLeftTaskKey, businessName).Err()
 }
 
 func (r *producerRepository) GetLeftTask(ctx context.Context) (pushconfig.PushConfig, error) {
-	biz, err := r.rdb.Get(ctx, config.StartConfig.Redis.ProducerLeftTaskKey).Result()
+	biz, err := r.rdb.LPop(ctx, config.StartConfig.Redis.ProducerLeftTaskKey).Result()
 	if err != nil && errors.Is(err, ErrKeyNotExist) {
 		return pushconfig.PushConfig{}, ErrKeyNotExist
 	}

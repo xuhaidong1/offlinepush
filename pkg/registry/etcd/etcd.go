@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"sync"
 
 	"github.com/xuhaidong1/offlinepush/pkg/registry"
@@ -57,7 +56,6 @@ func (r *Registry) Register(ctx context.Context, ins registry.ServiceInstance) e
 func (r *Registry) UnRegister(ctx context.Context, ins registry.ServiceInstance) error {
 	instanceKey := fmt.Sprintf("%s/%s", ins.ServiceName, ins.Address)
 	_, err := r.client.Delete(ctx, instanceKey)
-	log.Println("取消注册")
 	return err
 }
 
@@ -134,7 +132,6 @@ func (r *Registry) Close() error {
 	watchCancel := r.watchCancel
 	r.mutex.RUnlock()
 	for _, cancel := range watchCancel {
-		log.Println("registry 取消订阅")
 		cancel()
 	}
 	// close(r.close)关闭这个chan 达到广播的效果，监听close的地方就会立即拿到0值 退出

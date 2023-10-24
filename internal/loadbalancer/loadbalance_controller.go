@@ -2,9 +2,11 @@ package loadbalancer
 
 import (
 	"context"
-	"log"
 	"sync"
 	"sync/atomic"
+
+	"github.com/xuhaidong1/offlinepush/cmd/ioc"
+	"go.uber.org/zap"
 
 	"github.com/xuhaidong1/offlinepush/config/pushconfig"
 	"github.com/xuhaidong1/offlinepush/pkg/registry"
@@ -22,6 +24,7 @@ type LoadBalanceController struct {
 	isUse        int32
 	cancel       context.CancelFunc
 	registry     registry.Registry
+	logger       *zap.Logger
 }
 
 func NewLoadBalanceController(ctx context.Context, notifyChan <-chan pushconfig.PushConfig, start, stop *cond.CondAtomic, registry registry.Registry) *LoadBalanceController {
@@ -32,6 +35,7 @@ func NewLoadBalanceController(ctx context.Context, notifyChan <-chan pushconfig.
 		loadBalancer: NewLoadBalancer(registry),
 		isUse:        int32(0),
 		registry:     registry,
+		logger:       ioc.Logger,
 	}
 	wg := &sync.WaitGroup{}
 	wg.Add(2)
@@ -43,48 +47,50 @@ func NewLoadBalanceController(ctx context.Context, notifyChan <-chan pushconfig.
 
 func (l *LoadBalanceController) ListenStartCond(ctx context.Context, wg *sync.WaitGroup) {
 	wg.Done()
+	l.logger.Info("LoadBalanceController", zap.String("ListenStartCond", "start"))
 	for {
 		l.startCond.L.Lock()
 		err := l.startCond.WaitWithTimeout(ctx)
 		l.startCond.L.Unlock()
 		if err != nil {
-			log.Println("LoadBalanceController listenStartCond closing")
+			l.logger.Info("LoadBalanceController", zap.String("ListenStartCond", "closed"))
 			return
 		}
 		ok := atomic.CompareAndSwapInt32(&l.isUse, int32(0), int32(1))
 		if !ok {
-			log.Fatalln("LoadBalanceController start fail")
+			l.logger.Error("LoadBalanceController", zap.String("ListenStartCond", "change status failed"))
 		}
+		l.logger.Info("LoadBalanceController", zap.Bool("isLoadbalancer", true))
 		go l.WatchNotifyChan(ctx)
 	}
 }
 
 func (l *LoadBalanceController) ListenStopCond(ctx context.Context, wg *sync.WaitGroup) {
 	wg.Done()
+	l.logger.Info("LoadBalanceController", zap.String("ListenStopCond", "start"))
 	for {
 		l.stopCond.L.Lock()
 		err := l.stopCond.WaitWithTimeout(ctx)
 		l.stopCond.L.Unlock()
+		// 能出来说明收到了停止信号
+		l.CancelLoadBalance()
+		atomic.StoreInt32(&l.isUse, int32(0))
+		l.logger.Info("ProduceController", zap.Bool("isLoadbalancer", false))
 		if err != nil {
-			log.Println("LoadBalanceController listenStopCond closing")
-			l.CancelLoadBalance()
+			l.logger.Info("LoadBalanceController", zap.String("ListenStopCond", "closed"))
 			return
 		}
-		ok := atomic.CompareAndSwapInt32(&l.isUse, int32(1), int32(0))
-		if !ok {
-			log.Fatalln("LoadBalanceController stop fail")
-		}
-		l.CancelLoadBalance()
 	}
 }
 
 func (l *LoadBalanceController) WatchNotifyChan(ctx context.Context) {
+	l.logger.Info("LoadBalanceController", zap.String("WatchNotifyChan", "start"))
 	watchCtx, cancel := context.WithCancel(ctx)
 	l.cancel = cancel
 	for {
 		select {
 		case <-watchCtx.Done():
-			log.Println("LoadBalanceController WatchNotifyChan closing")
+			l.logger.Info("LoadBalanceController", zap.String("WatchNotifyChan", "canceled"))
 			return
 		case cfg := <-l.notifyChan:
 			if atomic.LoadInt32(&l.isUse) == int32(1) {

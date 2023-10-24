@@ -2,20 +2,23 @@ package loadbalancer
 
 import (
 	"context"
-	"log"
 
+	"github.com/xuhaidong1/offlinepush/cmd/ioc"
 	"github.com/xuhaidong1/offlinepush/config"
 	"github.com/xuhaidong1/offlinepush/config/pushconfig"
 	"github.com/xuhaidong1/offlinepush/pkg/registry"
+	"go.uber.org/zap"
 )
 
 type LoadBalancer struct {
 	registry registry.Registry
+	logger   *zap.Logger
 }
 
 func NewLoadBalancer(registry registry.Registry) *LoadBalancer {
 	return &LoadBalancer{
 		registry: registry,
+		logger:   ioc.Logger,
 	}
 }
 
@@ -23,7 +26,9 @@ func (l *LoadBalancer) SelectConsumer(cfg pushconfig.PushConfig) {
 	ctx := context.Background()
 	insSlice, err := l.registry.ListService(ctx, config.StartConfig.Register.ServiceName)
 	if err != nil {
-		log.Fatalln(err)
+		l.logger.Error("LoadBalancer",
+			zap.String("SelectConsumer", "ListService"),
+			zap.Error(err))
 	}
 	targetIns := l.Max(insSlice)
 	targetIns.Weight -= cfg.Weight
@@ -34,11 +39,15 @@ func (l *LoadBalancer) SelectConsumer(cfg pushconfig.PushConfig) {
 	}
 	err = l.registry.Register(ctx, targetIns)
 	if err != nil {
-		log.Fatalln(err)
+		l.logger.Error("LoadBalancer",
+			zap.String("SelectConsumer", "Register targetIns"),
+			zap.Error(err))
 	}
 	err = l.registry.Register(ctx, consumeIns)
 	if err != nil {
-		log.Fatalln(err)
+		l.logger.Error("LoadBalancer",
+			zap.String("SelectConsumer", "Register consumeIns"),
+			zap.Error(err))
 	}
 }
 
