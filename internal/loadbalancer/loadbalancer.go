@@ -30,6 +30,7 @@ func (l *LoadBalancer) SelectConsumer(cfg pushconfig.PushConfig) {
 			zap.String("SelectConsumer", "ListService"),
 			zap.Error(err))
 	}
+	l.logger.Info("LoadBalancer", zap.Any("ListService", insSlice))
 	targetIns := l.Max(insSlice)
 	targetIns.Weight -= cfg.Weight
 	consumeIns := registry.ServiceInstance{
