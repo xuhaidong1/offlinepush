@@ -7,9 +7,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/xuhaidong1/offlinepush/config"
+
 	"github.com/redis/go-redis/v9"
 	"github.com/xuhaidong1/offlinepush/cmd/ioc"
-	"github.com/xuhaidong1/offlinepush/config"
 	"go.uber.org/zap"
 
 	"github.com/xuhaidong1/offlinepush/config/pushconfig"
@@ -48,11 +49,9 @@ func NewProduceController(ctx context.Context, notifyProducer <-chan pushconfig.
 		logger:      ioc.Logger,
 	}
 	wg := &sync.WaitGroup{}
-	wg.Add(4)
+	wg.Add(2)
 	go p.ListenStartCond(ctx, wg)
 	go p.ListenStopCond(ctx, wg)
-	go p.WatchTask(ctx, wg)
-	go p.WatchLeftTask(ctx, wg, config.StartConfig.Redis.ProducerLeftTaskKey, time.Second)
 	wg.Wait()
 	return p
 }
@@ -71,8 +70,13 @@ func (p *ProduceController) ListenStartCond(ctx context.Context, wg *sync.WaitGr
 		ok := atomic.CompareAndSwapInt32(&p.isUse, int32(0), int32(1))
 		p.logger.Info("ProduceController", zap.Bool("isProducer", true))
 		if !ok {
-			p.logger.Error("ProduceController", zap.String("ListenStartCond", "change status failed"))
+			p.logger.Warn("ProduceController", zap.String("ListenStartCond", "change status failed"))
 		}
+		wgg := &sync.WaitGroup{}
+		wgg.Add(2)
+		go p.WatchTask(ctx, wgg)
+		go p.WatchLeftTask(ctx, wgg, config.StartConfig.Redis.ProducerLeftTaskKey, time.Second)
+		wgg.Wait()
 	}
 }
 
@@ -98,15 +102,22 @@ func (p *ProduceController) ListenStopCond(ctx context.Context, wg *sync.WaitGro
 
 func (p *ProduceController) WatchTask(ctx context.Context, wg *sync.WaitGroup) {
 	wg.Done()
+	watchCtx, cancel := context.WithCancel(ctx)
+	_, loaded := p.CancelFuncs.LoadOrStore("WatchTask", cancel)
+	// load到说明有问题，不是生产者却开始WatchLeftTask
+	if loaded {
+		p.logger.Warn("WatchLeftTask", zap.String("LoadOrStore CancelFunc", "err"))
+		return
+	}
 	p.logger.Info("ProduceController", zap.String("WatchTask", "start"))
 	for {
 		select {
-		case <-ctx.Done():
-			p.logger.Info("ProduceController", zap.String("WatchTask", "closed"))
+		case <-watchCtx.Done():
+			p.logger.Info("ProduceController", zap.String("WatchTask", "canceled"))
 			return
 		case cfg := <-p.notifyProducer:
 			if atomic.LoadInt32(&p.isUse) == int32(1) {
-				go p.Assign(ctx, cfg)
+				go p.Assign(watchCtx, cfg)
 			}
 		}
 	}
@@ -114,26 +125,33 @@ func (p *ProduceController) WatchTask(ctx context.Context, wg *sync.WaitGroup) {
 
 func (p *ProduceController) WatchLeftTask(ctx context.Context, wg *sync.WaitGroup, key string, interval time.Duration) {
 	wg.Done()
+	watchCtx, cancel := context.WithCancel(ctx)
+	_, loaded := p.CancelFuncs.LoadOrStore("WatchLeftTask", cancel)
+	// load到说明有问题，不是生产者却开始WatchLeftTask
+	if loaded {
+		p.logger.Warn("WatchLeftTask", zap.String("LoadOrStore CancelFunc", "err"))
+		return
+	}
 	p.logger.Info("ProduceController", zap.String("WatchLeftTask", "start"))
 	// 每隔interval询问一次
 	ticker := time.NewTicker(interval)
 	for {
 		select {
-		case <-ctx.Done():
-			p.logger.Info("ProduceController", zap.String("WatchLeftTask", "closed"))
+		case <-watchCtx.Done():
+			p.logger.Info("ProduceController", zap.String("WatchLeftTask", "canceled"))
 			return
 		case <-ticker.C:
 			if atomic.LoadInt32(&p.isUse) != int32(1) {
 				continue
 			}
-			cfg, err := p.repo.GetLeftTask(ctx)
+			cfg, err := p.repo.GetLeftTask(watchCtx)
 			if err != nil && !errors.Is(err, redis.Nil) {
 				p.logger.Error("ProduceController", zap.Error(err))
 			}
 			if errors.Is(err, redis.Nil) {
 				continue
 			}
-			go p.Assign(ctx, cfg)
+			go p.Assign(watchCtx, cfg)
 		}
 	}
 }
@@ -141,6 +159,7 @@ func (p *ProduceController) WatchLeftTask(ctx context.Context, wg *sync.WaitGrou
 func (p *ProduceController) Assign(ctx context.Context, cfg pushconfig.PushConfig) {
 	produceCtx, cancel := context.WithCancel(ctx)
 	_, loaded := p.CancelFuncs.LoadOrStore(cfg.Business.Name, cancel)
+	// load到说明在生产了，不需要再另开goroutine生产
 	if loaded {
 		return
 	}

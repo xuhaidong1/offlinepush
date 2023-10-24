@@ -75,7 +75,7 @@ func (l *LoadBalanceController) ListenStopCond(ctx context.Context, wg *sync.Wai
 		// 能出来说明收到了停止信号
 		l.CancelLoadBalance()
 		atomic.StoreInt32(&l.isUse, int32(0))
-		l.logger.Info("ProduceController", zap.Bool("isLoadbalancer", false))
+		l.logger.Info("LoadBalanceController", zap.Bool("isLoadbalancer", false))
 		if err != nil {
 			l.logger.Info("LoadBalanceController", zap.String("ListenStopCond", "closed"))
 			return
