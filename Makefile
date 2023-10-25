@@ -64,8 +64,8 @@ CONTAINER_ID := $(shell docker ps |grep "/app/offlinepush"|awk '{print $$1}')
 OLD_IMAGE := $(PREFIX)$(shell cat $(SCRIPTS_PATH)/deploy/version/version.txt)
 
 #-------k8s更新部署点这个-------------------------------------------------------
-.PHONY: update
-update:
+.PHONY: update_k8s
+update_k8s:
 	#这两个要分开写，要不然第2步获取到的是旧版本号
 	@make incr_version
 	@make deploy_image_update
@@ -97,11 +97,34 @@ deploy_image_update:
 	@kubectl set image deployment/offlinepush  offlinepush=$(PREFIX)$(shell cat $(SCRIPTS_PATH)/deploy/version/version.txt)
 
 
-.PHONY: deploy_k8s
-deploy_k8s:
+.PHONY: deploy_3rd
+deploy_3rd:
 	@kubectl apply -f $(SCRIPTS_PATH)/deploy/k8s/k8s-redis.yaml
 	@kubectl apply -f  $(SCRIPTS_PATH)/deploy/k8s/k8s-etcd.yaml
+
+.PHONY: deploy_k8s
+deploy_k8s:
 	@kubectl apply -f  $(SCRIPTS_PATH)/deploy/k8s/k8s-offlinepush.yaml
+
+.PHONY: init_k8s
+ini_k8s:
+	@make incr_version
+	@make deploy_k8s
+	@echo ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> 本地部署集群 <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<"
+	# 把上次编译的东西删掉
+	@rm ./compile_out/offlinepush || true
+	# 运行一下 go mod tidy，防止 go.sum 文件不对，编译失败
+	@make tidy
+	# 指定编译成在 ARM 架构的 linux 操作系统上运行的可执行文件，
+	# -tags=k8s 暂时不需要
+	@GOOS=linux GOARCH=arm go build -tags=k8s -o ./compile_out/offlinepush ./cmd/main
+
+	# 把新版本镜像tag写入yaml
+	@bash $(SCRIPTS_PATH)/deploy/version/fill_k8s_yaml.sh $(SCRIPTS_PATH)
+	# 构建新版本镜像
+	@docker build -t $(PREFIX)$(shell cat $(SCRIPTS_PATH)/deploy/version/version.txt) -f $(SCRIPTS_PATH)/deploy/k8s/Dockerfile .
+
+
 
 replicas:
 	#先拿到 正在部署的版本

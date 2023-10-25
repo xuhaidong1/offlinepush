@@ -15,8 +15,9 @@ import (
 )
 
 var (
-	ErrRefreshFailed = errors.New("续约失败")
-	ErrLockNotHold   = errs.ErrLockNotHold
+	ErrRefreshFailed       = errors.New("续约失败")
+	ErrLockNotHold         = errs.ErrLockNotHold
+	ErrFailedToPreemptLock = errs.ErrFailedToPreemptLock
 )
 
 type LockController struct {
@@ -114,10 +115,10 @@ func (m *LockController) Apply(ctx context.Context) (*redisLock.Lock, error) {
 		case <-ticker.C:
 			l, err := m.lockClient.TryLock(ctx, m.lockConfig.LockKey, m.podName, m.lockConfig.Expiration)
 			// 抢锁失败
-			if err != nil && !errors.Is(err, ErrLockNotHold) {
+			if err != nil && !errors.Is(err, ErrFailedToPreemptLock) {
 				return nil, err
 			}
-			if errors.Is(err, ErrLockNotHold) {
+			if errors.Is(err, ErrFailedToPreemptLock) {
 				continue
 			}
 			return l, nil
@@ -133,8 +134,7 @@ func (m *LockController) Run(ctx context.Context) {
 	go func() {
 		lock, err := m.Apply(ctx)
 		if err != nil && !errors.Is(err, context.Canceled) {
-			m.logger.Error("LockController", zap.String("Run", "Apply"), zap.Error(err))
-			return
+			m.logger.Info("LockController", zap.String("Run", "Apply"), zap.Error(err))
 		}
 		if errors.Is(err, context.Canceled) {
 			return

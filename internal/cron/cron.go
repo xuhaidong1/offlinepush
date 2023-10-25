@@ -1,7 +1,7 @@
 package cron
 
 import (
-	robfig "github.com/robfig/cron"
+	robfig "github.com/robfig/cron/v3"
 	"github.com/xuhaidong1/offlinepush/cmd/ioc"
 	"github.com/xuhaidong1/offlinepush/config/pushconfig"
 	"go.uber.org/zap"
@@ -27,7 +27,7 @@ func NewCronController(produceChan chan<- pushconfig.PushConfig) *CronController
 }
 
 func (c *CronController) AddConfig(crontab string, config pushconfig.PushConfig) {
-	err := c.cron.AddFunc(crontab, func() {
+	_, err := c.cron.AddFunc(crontab, func() {
 		c.produceChan <- config
 	})
 	if err != nil {

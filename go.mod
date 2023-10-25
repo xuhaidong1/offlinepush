@@ -5,7 +5,7 @@ go 1.21.0
 require (
 	github.com/gotomicro/ego v1.1.16
 	github.com/redis/go-redis/v9 v9.2.1
-	github.com/robfig/cron v1.2.0
+	github.com/robfig/cron/v3 v3.0.1
 	github.com/xuhaidong1/go-generic-tools v0.0.5
 	go.etcd.io/etcd/api/v3 v3.5.9
 	go.etcd.io/etcd/client/v3 v3.5.9

@@ -11,9 +11,12 @@ func NewPushLogger() *log.Logger {
 	if err != nil {
 		panic(err)
 	}
-	logDir := "logs"
-	logFileName := "push.log"
-	logFilePath := filepath.Join(currentDir, logDir, logFileName)
+	logDir := filepath.Join(currentDir, "logs")
+	err = os.MkdirAll(logDir, os.ModePerm)
+	if err != nil {
+		panic(err)
+	}
+	logFilePath := filepath.Join(logDir, "push.log")
 	// os.O_APPEND
 	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY, 0o666)
 	if err != nil {

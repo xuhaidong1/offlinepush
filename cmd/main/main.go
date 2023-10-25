@@ -86,8 +86,9 @@ func main() {
 	time.Sleep(time.Second * 2)
 	go func() {
 		notifyProducerChan <- pushconfig.PushMap["reboot"]
-		time.Sleep(time.Second)
-		notifyProducerChan <- pushconfig.PushMap["weather"]
+		// time.Sleep(time.Second)
+		// notifyProducerChan <- pushconfig.PushMap["weather"]
+		// time.Sleep(time.Second*3)
 	}()
 
 	ch := make(chan os.Signal, 1)
