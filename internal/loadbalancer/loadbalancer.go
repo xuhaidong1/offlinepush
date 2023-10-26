@@ -32,17 +32,10 @@ func (l *LoadBalancer) SelectConsumer(cfg pushconfig.PushConfig) {
 	}
 	l.logger.Info("LoadBalancer", zap.Any("ListService", insSlice))
 	targetIns := l.Max(insSlice)
-	targetIns.Weight -= cfg.Weight
 	consumeIns := registry.ServiceInstance{
 		Address:     targetIns.Address,
 		ServiceName: config.StartConfig.Register.ConsumerPrefix + targetIns.Address,
 		Note:        cfg.Business.Name,
-	}
-	err = l.registry.Register(ctx, targetIns)
-	if err != nil {
-		l.logger.Error("LoadBalancer",
-			zap.String("SelectConsumer", "Register targetIns"),
-			zap.Error(err))
 	}
 	err = l.registry.Register(ctx, consumeIns)
 	if err != nil {

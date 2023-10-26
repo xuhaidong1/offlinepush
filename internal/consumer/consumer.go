@@ -6,25 +6,32 @@ import (
 	"log"
 	"time"
 
+	"github.com/xuhaidong1/offlinepush/internal/interceptor"
+
 	"github.com/xuhaidong1/offlinepush/cmd/ioc"
 	"github.com/xuhaidong1/offlinepush/internal/consumer/repository"
 	"github.com/xuhaidong1/offlinepush/internal/domain"
 	"go.uber.org/zap"
 )
 
-var NoMessage = repository.NoMessage
+var (
+	NoMessage = repository.NoMessage
+	Paused    = errors.New("该业务暂停")
+)
 
 type Consumer struct {
-	repo       repository.ConsumerRepository
-	pushLogger *log.Logger
-	logger     *zap.Logger
+	repo        repository.ConsumerRepository
+	interceptor *interceptor.Interceptor
+	pushLogger  *log.Logger
+	logger      *zap.Logger
 }
 
-func NewConsumer(repo repository.ConsumerRepository) *Consumer {
+func NewConsumer(repo repository.ConsumerRepository, interceptor *interceptor.Interceptor) *Consumer {
 	return &Consumer{
-		repo:       repo,
-		pushLogger: ioc.PushLogger,
-		logger:     ioc.Logger,
+		repo:        repo,
+		interceptor: interceptor,
+		pushLogger:  ioc.PushLogger,
+		logger:      ioc.Logger,
 	}
 }
 
@@ -34,6 +41,9 @@ func (c *Consumer) Consume(ctx context.Context, bizName string) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
+			if !c.interceptor.Permit(bizName) {
+				return Paused
+			}
 			msg, err := c.repo.GetMessage(ctx, bizName)
 			if err != nil && !errors.Is(err, NoMessage) {
 				c.logger.Error("Consumer", zap.String("Consume", "GetMessage"), zap.Error(err))

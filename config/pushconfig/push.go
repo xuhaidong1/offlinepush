@@ -4,12 +4,12 @@ import "github.com/xuhaidong1/offlinepush/internal/domain"
 
 // PushConfig 推送配置
 type PushConfig struct {
-	Business       domain.Business
-	DeviceTypeList []string // 描述推送哪些类型设备
+	Business       domain.Business `json:"business"`
+	DeviceTypeList []string        `json:"device_type_list"` // 描述推送哪些类型设备
 	// 推送时间cron表达式
-	Cron   string
-	Weight uint32
-	Qps    int
+	Cron   string `json:"cron"`
+	Weight uint32 `json:"weight"`
+	Qps    int    `json:"qps"`
 }
 
 var PushMap = map[string]PushConfig{

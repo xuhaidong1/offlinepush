@@ -17,10 +17,10 @@ type Registry interface {
 
 // ServiceInstance 代表一个实例
 type ServiceInstance struct {
-	Address     string
-	ServiceName string
-	Weight      uint32
-	Note        string
+	Address     string `json:"address"`
+	ServiceName string `json:"service_name"`
+	Weight      uint32 `json:"weight"`
+	Note        string `json:"note"`
 }
 
 type EventType int

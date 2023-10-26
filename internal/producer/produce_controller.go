@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/xuhaidong1/offlinepush/internal/interceptor"
+
 	"github.com/xuhaidong1/offlinepush/config"
 
 	"github.com/redis/go-redis/v9"
@@ -23,54 +25,59 @@ type ProduceController struct {
 	// cron 写 producer读
 	notifyProducer     <-chan pushconfig.PushConfig
 	notifyLoadBalancer chan<- pushconfig.PushConfig
-	startCond          *cond.CondAtomic
-	stopCond           *cond.CondAtomic
-	producers          *sync.Pool
-	repo               repository.ProducerRepository
-	isUse              int32
-	CancelFuncs        *sync.Map
-	logger             *zap.Logger
+	// 成为/卸任生产者的cond，由分布式锁决定是，用户无需关心
+	engageCond  *cond.CondAtomic
+	dismissCond *cond.CondAtomic
+	producers   *sync.Pool
+	repo        repository.ProducerRepository
+	interceptor *interceptor.Interceptor
+	isEngaged   int32
+	CancelFuncs *sync.Map
+	logger      *zap.Logger
 }
 
-func NewProduceController(ctx context.Context, notifyProducer <-chan pushconfig.PushConfig, notifyLoadBalancer chan<- pushconfig.PushConfig,
+func NewProduceController(ctx context.Context, notifyProducer <-chan pushconfig.PushConfig,
+	notifyLoadBalancer chan<- pushconfig.PushConfig,
 	start, stop *cond.CondAtomic, repo repository.ProducerRepository,
+	interceptor *interceptor.Interceptor,
 ) *ProduceController {
 	p := &ProduceController{
 		notifyProducer:     notifyProducer,
 		notifyLoadBalancer: notifyLoadBalancer,
-		startCond:          start,
-		stopCond:           stop,
+		engageCond:         start,
+		dismissCond:        stop,
 		producers: &sync.Pool{New: func() any {
 			return NewProducer(repo)
 		}},
 		repo:        repo,
-		isUse:       int32(0),
+		interceptor: interceptor,
+		isEngaged:   int32(0),
 		CancelFuncs: &sync.Map{},
 		logger:      ioc.Logger,
 	}
 	wg := &sync.WaitGroup{}
 	wg.Add(2)
-	go p.ListenStartCond(ctx, wg)
-	go p.ListenStopCond(ctx, wg)
+	go p.ListenEngageCond(ctx, wg)
+	go p.ListenDismissCond(ctx, wg)
 	wg.Wait()
 	return p
 }
 
-func (p *ProduceController) ListenStartCond(ctx context.Context, wg *sync.WaitGroup) {
+func (p *ProduceController) ListenEngageCond(ctx context.Context, wg *sync.WaitGroup) {
 	wg.Done()
-	p.logger.Info("ProduceController", zap.String("ListenStartCond", "start"))
+	p.logger.Info("ProduceController", zap.String("ListenEngageCond", "start"))
 	for {
-		p.startCond.L.Lock()
-		err := p.startCond.WaitWithTimeout(ctx)
-		p.startCond.L.Unlock()
+		p.engageCond.L.Lock()
+		err := p.engageCond.WaitWithTimeout(ctx)
+		p.engageCond.L.Unlock()
 		if err != nil {
-			p.logger.Info("ProduceController", zap.String("ListenStartCond", "closed"))
+			p.logger.Info("ProduceController", zap.String("ListenEngageCond", "closed"))
 			return
 		}
-		ok := atomic.CompareAndSwapInt32(&p.isUse, int32(0), int32(1))
+		ok := atomic.CompareAndSwapInt32(&p.isEngaged, int32(0), int32(1))
 		p.logger.Info("ProduceController", zap.Bool("isProducer", true))
 		if !ok {
-			p.logger.Warn("ProduceController", zap.String("ListenStartCond", "change status failed"))
+			p.logger.Warn("ProduceController", zap.String("ListenEngageCond", "change status failed"))
 		}
 		wgg := &sync.WaitGroup{}
 		wgg.Add(2)
@@ -80,20 +87,20 @@ func (p *ProduceController) ListenStartCond(ctx context.Context, wg *sync.WaitGr
 	}
 }
 
-// ListenStopCond 这边收到了停止信号，是不知道什么原因让停止的 /没拿到锁 应该传黑匣子/手动停止 应该传黑匣子/服务关闭 应该传黑匣子--统一了 不需要知道原因
-func (p *ProduceController) ListenStopCond(ctx context.Context, wg *sync.WaitGroup) {
+// ListenDismissCond 这边收到了停止信号，是不知道什么原因让停止的 /没拿到锁 应该传黑匣子/手动停止 应该传黑匣子/服务关闭 应该传黑匣子--统一了 不需要知道原因
+func (p *ProduceController) ListenDismissCond(ctx context.Context, wg *sync.WaitGroup) {
 	wg.Done()
-	p.logger.Info("ProduceController", zap.String("ListenStopCond", "start"))
+	p.logger.Info("ProduceController", zap.String("ListenDismissCond", "start"))
 	for {
-		p.stopCond.L.Lock()
-		err := p.stopCond.WaitWithTimeout(ctx)
-		p.stopCond.L.Unlock()
+		p.dismissCond.L.Lock()
+		err := p.dismissCond.WaitWithTimeout(ctx)
+		p.dismissCond.L.Unlock()
 		// 能出来说明收到了停止信号
 		p.CancelProduce()
-		atomic.StoreInt32(&p.isUse, int32(0))
+		atomic.StoreInt32(&p.isEngaged, int32(0))
 		p.logger.Info("ProduceController", zap.Bool("isProducer", false))
 		if err != nil {
-			p.logger.Info("ProduceController", zap.String("ListenStopCond", "closed"))
+			p.logger.Info("ProduceController", zap.String("ListenDismissCond", "closed"))
 			return
 		}
 
@@ -116,7 +123,11 @@ func (p *ProduceController) WatchTask(ctx context.Context, wg *sync.WaitGroup) {
 			p.logger.Info("ProduceController", zap.String("WatchTask", "canceled"))
 			return
 		case cfg := <-p.notifyProducer:
-			if atomic.LoadInt32(&p.isUse) == int32(1) {
+			if atomic.LoadInt32(&p.isEngaged) == int32(1) {
+				if !p.interceptor.Permit(cfg.Business.Name) {
+					p.logger.Info("ProduceController", zap.String(cfg.Business.Name, "stopped"))
+					continue
+				}
 				go p.Assign(watchCtx, cfg)
 			}
 		}
@@ -141,7 +152,7 @@ func (p *ProduceController) WatchLeftTask(ctx context.Context, wg *sync.WaitGrou
 			p.logger.Info("ProduceController", zap.String("WatchLeftTask", "canceled"))
 			return
 		case <-ticker.C:
-			if atomic.LoadInt32(&p.isUse) != int32(1) {
+			if atomic.LoadInt32(&p.isEngaged) != int32(1) {
 				continue
 			}
 			cfg, err := p.repo.GetLeftTask(watchCtx)
@@ -149,6 +160,10 @@ func (p *ProduceController) WatchLeftTask(ctx context.Context, wg *sync.WaitGrou
 				p.logger.Error("ProduceController", zap.Error(err))
 			}
 			if errors.Is(err, redis.Nil) {
+				continue
+			}
+			if !p.interceptor.Permit(cfg.Business.Name) {
+				p.logger.Info("ProduceController", zap.String(cfg.Business.Name, "stopped"))
 				continue
 			}
 			go p.Assign(watchCtx, cfg)

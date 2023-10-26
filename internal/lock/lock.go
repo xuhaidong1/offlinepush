@@ -67,12 +67,6 @@ func (m *LockController) AutoRefresh(ctx context.Context, l *redisLock.Lock, tim
 			}
 			if err != nil {
 				// 不可挽回的错误 要考虑中断业务执行，应该先中断生产，后解锁，
-				// 如果先解锁，其它实例成为生产者，我们还没中断生产，生产进度还没写回到redis，新生产者就开始生产了，会导致生产两份相同的消息
-				// 应该先中断生产，生产黑匣子写回redis，解锁
-				// 生产写回redis&派任务时收到停止生产信号，应该无视，下一轮发现ctx没锁了，就退出了
-				// 新生产者上任：检查上一个生产者的黑匣子（一个指定key：producer_black_box）（记录了意外中断时在生产但还没有写回redis的business名字）（应该只有1个），生产日期time），
-				// 把这些黑匣子里的内容都重新生产一遍。
-				// 生产者正常写回缓存时应该一股脑写到redis，但负载均衡应该按照本地缓存里面的分片的消息一一分配，完成一个business的生产-写redis-对本地缓存做负载均衡-一片数据负载均衡一次-完成分配就清除本地缓存
 				return ErrRefreshFailed
 			}
 			retryCnt = 0
@@ -151,11 +145,8 @@ func (m *LockController) Run(ctx context.Context) {
 			m.stopCond.Broadcast()
 			m.stopCond.L.Unlock()
 		}
-		err = m.l.Unlock(context.WithoutCancel(ctx))
+		_ = m.l.Unlock(context.WithoutCancel(ctx))
 		m.l = nil
-		if err != nil {
-			m.logger.Error("LockController", zap.String("Run", "Unlock"), zap.Error(err))
-		}
 		m.logger.Info("LockController", zap.String("status", "closed"))
 		return
 	}()

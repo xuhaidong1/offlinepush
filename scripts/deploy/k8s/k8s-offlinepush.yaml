@@ -37,7 +37,7 @@ spec:
       #      pod 里面运行的 container
       containers:
         - name: offlinepush
-          image: xuhaidong/offlinepush:v0.0.48
+          image: xuhaidong/offlinepush:v0.0.49
           env:
             - name: TZ
               value: "Asia/Shanghai"

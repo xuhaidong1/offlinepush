@@ -6,11 +6,11 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
-	"time"
-
-	"go.uber.org/zap"
 
 	"github.com/xuhaidong1/offlinepush/internal/consumer/repository/cache"
+	interceptor2 "github.com/xuhaidong1/offlinepush/internal/interceptor"
+	"github.com/xuhaidong1/offlinepush/internal/service"
+	"github.com/xuhaidong1/offlinepush/web"
 
 	"github.com/xuhaidong1/offlinepush/config/pushconfig"
 	"github.com/xuhaidong1/offlinepush/internal/cron"
@@ -47,7 +47,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	//-------通道创建------
+	//-------通道/拦截器创建------
 	// 消费者只订阅自己
 	notifyConsumerChan, err := rg.Subscribe(consumeIns.ServiceName)
 	if err != nil {
@@ -55,74 +55,51 @@ func main() {
 	}
 	notifyProducerChan := make(chan pushconfig.PushConfig, 10)
 	notifyLoadBalancerChan := make(chan pushconfig.PushConfig, 10)
+	interceptor := interceptor2.NewInterceptor()
 	//----消费者初始化-----------------
 	consumeRepo := consumerrepo.NewConsumerRepository(localCache, rdb)
-	consumer.NewConsumeController(ctx, notifyConsumerChan, consumeRepo, rg)
+	consumer.NewConsumeController(ctx, notifyConsumerChan, consumeRepo, interceptor, rg)
 
 	//----分布式锁管理----
 	lockClient := redis_lock.NewClient(rdb)
-	// cond用于管理生产者/负载均衡组件的启动停止
-	startCond := cond.NewCondAtomic(&sync.Mutex{})
-	stopCond := cond.NewCondAtomic(&sync.Mutex{})
+	// cond用于管理生产者/负载均衡组件的任命/卸任
+	engageCond := cond.NewCondAtomic(&sync.Mutex{})
+	dismissCond := cond.NewCondAtomic(&sync.Mutex{})
 	//----负载均衡控制器初始化----
-	loadbalancer.NewLoadBalanceController(ctx, notifyLoadBalancerChan, startCond, stopCond, rg)
+	loadbalancer.NewLoadBalanceController(ctx, notifyLoadBalancerChan, engageCond, dismissCond, rg)
 	//----生产者控制器初始化------
 	producerRepo := producerrepo.NewProducerRepository(localCache, rdb)
-	producer.NewProduceController(ctx, notifyProducerChan, notifyLoadBalancerChan, startCond, stopCond, producerRepo)
+	producer.NewProduceController(ctx, notifyProducerChan, notifyLoadBalancerChan, engageCond,
+		dismissCond, producerRepo, interceptor)
 	//-----定时任务控制器初始化----
 	cronController := cron.NewCronController(notifyProducerChan)
 	//-----锁控制器初始化--------
-	lockController := lock.NewLockController(lockClient, podName, startCond, stopCond, config.StartConfig.Lock)
+	lockController := lock.NewLockController(lockClient, podName, engageCond, dismissCond, config.StartConfig.Lock)
 	lockController.Run(ctx)
 	//----优雅关闭初始化------
-	gs := &GracefulShutdown{
-		Cancel:         cancel,
-		Registry:       rg,
-		instance:       ins,
-		consumeIns:     consumeIns,
-		cronController: cronController,
-		logger:         ioc.Logger,
-	}
-	time.Sleep(time.Second * 2)
-	go func() {
-		notifyProducerChan <- pushconfig.PushMap["reboot"]
-		// time.Sleep(time.Second)
-		// notifyProducerChan <- pushconfig.PushMap["weather"]
-		// time.Sleep(time.Second*3)
-	}()
-
+	gs := NewGracefulShutdown(cancel, rg, ins, consumeIns, cronController, ioc.Logger)
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGINT)
+	//-----http service初始化----
+	pushService := service.NewPushService(notifyProducerChan, interceptor, producerRepo, consumeRepo, rg, ch)
+	pushHandler := web.NewPushHandler(pushService)
+	server := ioc.InitWebServer(pushHandler)
+	go func() {
+		er := server.Run(":8085")
+		if er != nil {
+			return
+		}
+	}()
+	//time.Sleep(time.Second * 2)
+	//go func() {
+	//	notifyProducerChan <- pushconfig.PushMap["reboot"]
+	//	// time.Sleep(time.Second)
+	//	// notifyProducerChan <- pushconfig.PushMap["weather"]
+	//	// time.Sleep(time.Second*3)
+	//}()
+	//
 	<-ch
 	gs.Shutdown()
-}
-
-type GracefulShutdown struct {
-	Cancel         context.CancelFunc
-	Registry       registry.Registry
-	instance       registry.ServiceInstance
-	consumeIns     registry.ServiceInstance
-	cronController *cron.CronController
-	logger         *zap.Logger
-}
-
-func (s *GracefulShutdown) Shutdown() {
-	s.Cancel()
-	s.logger.Info("GracefulShutdown", zap.String("GracefulShutdown", "UnRegister"))
-	err := s.Registry.UnRegister(context.Background(), s.instance)
-	if err != nil {
-		s.logger.Error("GracefulShutdown", zap.Error(err))
-	}
-	err = s.Registry.UnRegister(context.Background(), s.consumeIns)
-	if err != nil {
-		s.logger.Error("GracefulShutdown", zap.Error(err))
-	}
-	err = s.Registry.Close()
-	if err != nil {
-		s.logger.Error("GracefulShutdown", zap.Error(err))
-	}
-	s.cronController.Stop()
-	time.Sleep(time.Second)
 }
 
 func RegisterService(ctx context.Context, rg registry.Registry) (ins, consumeIns registry.ServiceInstance, err error) {
