@@ -28,6 +28,7 @@ type RedisConfig struct {
 type RegisterConfig struct {
 	ServiceName    string
 	ConsumerPrefix string
+	InterceptorKey string
 	PodName        string
 }
 

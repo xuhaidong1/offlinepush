@@ -55,7 +55,7 @@ func main() {
 	}
 	notifyProducerChan := make(chan pushconfig.PushConfig, 10)
 	notifyLoadBalancerChan := make(chan pushconfig.PushConfig, 10)
-	interceptor := interceptor2.NewInterceptor()
+	interceptor := interceptor2.NewInterceptor(ctx, rg, ioc.Logger)
 	//----消费者初始化-----------------
 	consumeRepo := consumerrepo.NewConsumerRepository(localCache, rdb)
 	consumer.NewConsumeController(ctx, notifyConsumerChan, consumeRepo, interceptor, rg)

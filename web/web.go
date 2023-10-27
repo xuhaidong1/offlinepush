@@ -1,11 +1,16 @@
 package web
 
 import (
+	"errors"
 	"net/http"
+
+	"github.com/xuhaidong1/offlinepush/config/pushconfig"
 
 	"github.com/gin-gonic/gin"
 	"github.com/xuhaidong1/offlinepush/internal/service"
 )
+
+var ErrNoBiz = errors.New("没有这个业务")
 
 type PushHandler struct {
 	service *service.PushService
@@ -27,12 +32,12 @@ func (h *PushHandler) RegisterRoutes(server *gin.Engine) {
 
 func (h *PushHandler) GetPushConfig(ctx *gin.Context) {
 	biz := ctx.Param("name")
-	config, err := h.service.GetPushConfig(biz)
-	if err != nil {
-		ctx.String(http.StatusBadRequest, err.Error())
+	cfg, ok := pushconfig.PushMap[biz]
+	if !ok {
+		ctx.String(http.StatusBadRequest, ErrNoBiz.Error())
 		return
 	}
-	ctx.JSON(http.StatusOK, config)
+	ctx.JSON(http.StatusOK, cfg)
 }
 
 func (h *PushHandler) AddTask(ctx *gin.Context) {
@@ -44,7 +49,12 @@ func (h *PushHandler) AddTask(ctx *gin.Context) {
 		ctx.String(http.StatusInternalServerError, err.Error())
 		return
 	}
-	err := h.service.AddTask(req.Business)
+	_, ok := pushconfig.PushMap[req.Business]
+	if !ok {
+		ctx.String(http.StatusBadRequest, ErrNoBiz.Error())
+		return
+	}
+	err := h.service.AddTask(ctx, req.Business)
 	if err != nil {
 		ctx.String(http.StatusInternalServerError, err.Error())
 		return
@@ -63,7 +73,7 @@ func (h *PushHandler) SetBusinessStatus(ctx *gin.Context) {
 		return
 	}
 	if req.Stop {
-		err := h.service.Pause(req.Business)
+		err := h.service.Pause(ctx, req.Business)
 		if err != nil {
 			ctx.String(http.StatusBadRequest, err.Error())
 			return
