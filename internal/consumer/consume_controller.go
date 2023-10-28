@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/xuhaidong1/offlinepush/internal/domain"
+
 	"github.com/xuhaidong1/offlinepush/internal/interceptor"
 
 	"github.com/xuhaidong1/offlinepush/cmd/ioc"
@@ -24,7 +26,7 @@ import (
 type ConsumeController struct {
 	// 注册中心写 consumeController读出任务来
 	notifyChan  <-chan registry.Event
-	consumers   *sync.Pool
+	consumer    *Consumer
 	repo        repository.ConsumerRepository
 	interceptor *interceptor.Interceptor
 	registry    registry.Registry
@@ -35,10 +37,8 @@ func NewConsumeController(ctx context.Context, ch <-chan registry.Event, repo re
 	interceptor *interceptor.Interceptor, rg registry.Registry,
 ) *ConsumeController {
 	p := &ConsumeController{
-		notifyChan: ch,
-		consumers: &sync.Pool{New: func() any {
-			return NewConsumer(repo, interceptor)
-		}},
+		notifyChan:  ch,
+		consumer:    NewConsumer(repo, interceptor),
 		repo:        repo,
 		registry:    rg,
 		interceptor: interceptor,
@@ -46,13 +46,13 @@ func NewConsumeController(ctx context.Context, ch <-chan registry.Event, repo re
 	}
 	wg := &sync.WaitGroup{}
 	wg.Add(2)
-	go p.WatchLeftMessage(ctx, wg, config.StartConfig.Redis.ConsumerLeftMessageKey, time.Second*3)
+	go p.WatchLeftTask(ctx, wg, config.StartConfig.Redis.ConsumerLeftTaskKey, time.Second*3)
 	go p.Schedule(ctx, wg)
 	wg.Wait()
 	return p
 }
 
-func (c *ConsumeController) WatchLeftMessage(ctx context.Context, wg *sync.WaitGroup, key string, interval time.Duration) {
+func (c *ConsumeController) WatchLeftTask(ctx context.Context, wg *sync.WaitGroup, key string, interval time.Duration) {
 	wg.Done()
 	c.logger.Info("ConsumeController", zap.String("WatchLeftMessage", "start"))
 	// 每隔interval询问一次
@@ -92,7 +92,7 @@ func (c *ConsumeController) Schedule(ctx context.Context, wg *sync.WaitGroup) {
 			if event.Type == registry.EventTypePut {
 				biz := event.Instance.Note
 				if !c.interceptor.Permit(biz) {
-					c.logger.Info("ConsumeController", zap.String(biz, "stopped"))
+					c.logger.Info("ConsumeController", zap.String(biz, "paused"))
 					continue
 				}
 				go c.Assign(ctx, biz)
@@ -105,28 +105,47 @@ func (c *ConsumeController) Schedule(ctx context.Context, wg *sync.WaitGroup) {
 func (c *ConsumeController) Assign(ctx context.Context, bizName string) {
 	c.SubWeight(ctx, bizName)
 	c.logger.Info(bizName, zap.String("push", "start"))
-	eg, egCtx := errgroup.WithContext(ctx)
+	// 消费完成信号，由读到EOF的consume goroutine关闭
+	finished, queueReady := make(chan struct{}), make(chan struct{})
+	dequeueCtx, cancel := context.WithCancel(ctx)
+	// 用于唤醒阻塞在dequeue中的goroutine
+	go func() {
+		<-finished
+		cancel()
+	}()
+	// 拉取消息到本地缓存，消费者异步消费
+	go c.Pull(ctx, bizName, queueReady)
+	eg := &errgroup.Group{}
 	// 根据qps调整goroutine数量
 	num := c.CalGoroutineNum(pushconfig.PushMap[bizName].Qps)
 	for i := 0; i < num; i++ {
 		eg.Go(func() error {
-			consumer := c.consumers.Get().(*Consumer)
-			defer c.consumers.Put(consumer)
-			err := consumer.Consume(egCtx, bizName)
+			err := c.consumer.Consume(ctx, dequeueCtx, bizName, finished, queueReady)
 			return err
 		})
 	}
 	// 等待所有消费完成
 	if err := eg.Wait(); err != nil {
-		if errors.Is(err, Paused) {
-			c.logger.Info("Consumer", zap.String("Consume", "paused"))
+		c.logger.Info("Consumer", zap.Any("status", err))
+		// 能走到这说明外面ctx已经取消了，写回被打断的biz需要另起ctx
+		newCtx := context.WithoutCancel(ctx)
+		// 拿到队列里面所有剩下的消息
+		msgs, er := c.repo.GetAllMessage(newCtx, bizName)
+		if er != nil {
+			c.logger.Error("ConsumeController", zap.String("Assign", "GetAllMessage"), zap.Error(er))
 		}
+		c.logger.Info("ConsumeController", zap.String("GetAllMessage", "ok"))
+		// 把剩下的消息都放回存储
+		er = c.repo.WriteBackLeftMessage(newCtx, bizName, msgs)
+		if er != nil {
+			c.logger.Error("ConsumeController", zap.String("Assign", "WriteBackLeftMessage"), zap.Error(er))
+		}
+		c.logger.Info("ConsumeController", zap.String("WriteBackLeftMessage", "ok"))
 		if errors.Is(err, context.Canceled) {
-			c.logger.Info("Consumer", zap.String("status", "canceled"))
-			// 能走到这说明外面ctx已经取消了，写回被打断的biz需要另起ctx
-			er := c.repo.WriteBackLeftTask(context.Background(), bizName)
+			// 如果是取消了，通知其它消费者消费；暂停的话实例还在，需要加回去weight
+			er = c.repo.WriteBackLeftTask(newCtx, bizName)
 			if er != nil {
-				c.logger.Error("ConsumeController", zap.String("Assign", "writeback"), zap.Error(er))
+				c.logger.Error("ConsumeController", zap.String("Assign", "WriteBackLeftTask"), zap.Error(er))
 			}
 			c.logger.Info("ConsumeController", zap.String("WriteBackLeftTask", "ok"))
 			return
@@ -184,4 +203,55 @@ func (c *ConsumeController) AddWeight(ctx context.Context, biz string) {
 			zap.String("Assign", "Register AddWeight"),
 			zap.Error(err))
 	}
+}
+
+func (c *ConsumeController) Pull(ctx context.Context, biz string, queueReady chan struct{}) {
+	closeOnce := &sync.Once{}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			if !c.interceptor.Permit(biz) {
+				return
+			}
+			msgs, err := c.repo.PullMessage(ctx, biz)
+			if err != nil && !errors.Is(err, NoMessage) {
+				c.logger.Error("ConsumeController", zap.Any("Pull", err))
+				return
+			}
+			if errors.Is(err, NoMessage) {
+				// 存EOF不应该被取消
+				err = c.repo.StoreMessage(context.WithoutCancel(ctx), domain.GetEOF(biz))
+				return
+			}
+			for i, msg := range msgs {
+				if !c.interceptor.Permit(biz) {
+					er := c.WriteBackLeftMessage(context.WithoutCancel(ctx), biz, msgs[i:])
+					if er != nil {
+						c.logger.Error("ConsumeController", zap.Any("WriteBackLeftMessage before store", er))
+					}
+					return
+				}
+				// 耗时操作，可能会在这阻塞
+				sErr := c.repo.StoreMessage(ctx, msg)
+				// ctx cancel了
+				if sErr != nil {
+					er := c.WriteBackLeftMessage(context.WithoutCancel(ctx), biz, msgs[i:])
+					if er != nil {
+						c.logger.Error("ConsumeController", zap.Any("WriteBackLeftMessage", er))
+					}
+					return
+				}
+				// 关闭queueReady chan通知到所有消费者，可以开始dequeue，避免出现队列还没建立，就开始出队的问题
+				closeOnce.Do(func() {
+					close(queueReady)
+				})
+			}
+		}
+	}
+}
+
+func (c *ConsumeController) WriteBackLeftMessage(ctx context.Context, biz string, msgs []domain.Message) error {
+	return c.repo.WriteBackLeftMessage(ctx, biz, msgs)
 }

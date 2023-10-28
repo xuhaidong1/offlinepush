@@ -1,6 +1,6 @@
 package deviceconfig
 
-const Num = 10000
+const Num = 2500
 
 // DeviceMap 生产中应该搞一个devicetype-[]deviceid list的映射
 var DeviceMap = map[string]int{

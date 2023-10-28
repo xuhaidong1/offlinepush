@@ -16,7 +16,7 @@ import (
 
 var (
 	NoMessage = repository.NoMessage
-	Paused    = errors.New("该业务暂停")
+	Paused    = errors.New("paused")
 )
 
 type Consumer struct {
@@ -35,7 +35,7 @@ func NewConsumer(repo repository.ConsumerRepository, interceptor *interceptor.In
 	}
 }
 
-func (c *Consumer) Consume(ctx context.Context, bizName string) error {
+func (c *Consumer) ConsumeOld(ctx context.Context, bizName string) error {
 	for {
 		select {
 		case <-ctx.Done():
@@ -44,15 +44,47 @@ func (c *Consumer) Consume(ctx context.Context, bizName string) error {
 			if !c.interceptor.Permit(bizName) {
 				return Paused
 			}
-			msg, err := c.repo.GetMessage(ctx, bizName)
+			// todo 改造这里 分片获取数据 一次获取一片数据：biz：devicetype 到本地缓存，
+			// todo 本地缓存消费完成后取下一片数据 如果被pause/cancel 需要把这一片的数据写回redis
+			msg, err := c.repo.GetMessageFromStorage(ctx, bizName)
 			if err != nil && !errors.Is(err, NoMessage) {
-				c.logger.Error("Consumer", zap.String("Consume", "GetMessage"), zap.Error(err))
+				c.logger.Error("Consumer", zap.String("ConsumeOld", "GetMessage"), zap.Error(err))
 				return nil
 			}
 			if errors.Is(err, NoMessage) {
 				return nil
 			}
 			// 在这里mock推送。。
+			c.Push(msg)
+		}
+	}
+}
+
+func (c *Consumer) Consume(ctx, dequeueCtx context.Context, biz string, finished, queueReady chan struct{}) error {
+	// finishMyself := make(chan struct{}, 1)
+	<-queueReady
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-finished:
+			return nil
+		default:
+			if !c.interceptor.Permit(biz) {
+				return Paused
+			}
+			msg, err := c.repo.GetMessage(dequeueCtx, biz)
+			if err != nil {
+				// 这里不知道是什么原因取消的，所以continue去返回原因
+				// 如果是上级取消（服务关闭，暂停）会走入case <-ctx.Done():
+				// 如果是消费完了没有消息了，会走入case <-finished:
+				continue
+			}
+			if domain.IsEOF(msg) {
+				// 后面没消息了，广播告诉其它消费者goroutine退出
+				close(finished)
+				continue
+			}
 			c.Push(msg)
 		}
 	}

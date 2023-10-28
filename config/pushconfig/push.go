@@ -18,7 +18,7 @@ var PushMap = map[string]PushConfig{
 		DeviceTypeList: []string{"iHome1", "iHome1S", "iHome1C", "iHome1X"},
 		Cron:           "0 0 3 * *",
 		Weight:         400,
-		Qps:            10000,
+		Qps:            4000,
 	},
 	"weather": {
 		Business:       domain.Business{Name: "weather"},
