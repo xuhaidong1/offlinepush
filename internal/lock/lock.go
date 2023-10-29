@@ -16,7 +16,6 @@ import (
 
 var (
 	ErrRefreshFailed       = errors.New("续约失败")
-	ErrLockNotHold         = errs.ErrLockNotHold
 	ErrFailedToPreemptLock = errs.ErrFailedToPreemptLock
 )
 

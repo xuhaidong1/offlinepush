@@ -61,8 +61,11 @@ func (c *Consumer) ConsumeOld(ctx context.Context, bizName string) error {
 }
 
 func (c *Consumer) Consume(ctx, dequeueCtx context.Context, biz string, finished, queueReady chan struct{}) error {
-	// finishMyself := make(chan struct{}, 1)
-	<-queueReady
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-queueReady:
+	}
 	for {
 		select {
 		case <-ctx.Done():
