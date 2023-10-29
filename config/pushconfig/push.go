@@ -30,7 +30,7 @@ var PushMap = map[string]PushConfig{
 	"card": {
 		Business:       domain.Business{Name: "card", Domain: "www.card.iHome.com"},
 		DeviceTypeList: []string{"iHome1", "iHome1S", "iHome1C", "iHome1X", "iHome2", "iHome2S", "iHome2C", "iHome2X"},
-		Cron:           "0 30 * * *",
+		Cron:           "30 * * * *",
 		Weight:         1100,
 		Qps:            4000,
 	},
