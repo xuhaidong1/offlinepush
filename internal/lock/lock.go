@@ -91,10 +91,7 @@ func (m *LockController) AutoRefresh(ctx context.Context, l *redisLock.Lock, tim
 			retryCnt = 0
 		case <-ctx.Done():
 			// 生产者主动退出
-			if ctx.Err() == context.Canceled {
-				return nil
-			}
-			return nil
+			return ctx.Err()
 		}
 	}
 }
@@ -126,29 +123,36 @@ func (m *LockController) Apply(ctx context.Context) (*redisLock.Lock, error) {
 func (m *LockController) Run(ctx context.Context) {
 	m.logger.Info("LockController", zap.String("status", "start"))
 	go func() {
-		lock, err := m.Apply(ctx)
-		if err != nil && !errors.Is(err, context.Canceled) {
-			m.logger.Info("LockController", zap.String("Run", "Apply"), zap.Error(err))
+		for {
+			m.logger.Info("LockController", zap.String("status", "Apply"))
+			lock, err := m.Apply(ctx)
+			if err != nil && !errors.Is(err, context.Canceled) {
+				m.logger.Info("LockController", zap.String("Run", "Apply"), zap.Error(err))
+			}
+			if errors.Is(err, context.Canceled) {
+				return
+			}
+			m.l = lock
+			m.startCond.L.Lock()
+			m.startCond.Broadcast()
+			m.startCond.L.Unlock()
+			err = m.AutoRefresh(ctx, lock, time.Millisecond*300)
+			// 续约失败/手动停止
+			if err != nil {
+				if errors.Is(err, ErrRefreshFailed) {
+					m.logger.Warn("LockController", zap.String("refresh", "failed"), zap.Error(err))
+				}
+				m.stopCond.L.Lock()
+				m.stopCond.Broadcast()
+				m.stopCond.L.Unlock()
+				_ = m.l.Unlock(context.WithoutCancel(ctx))
+				m.l = nil
+			}
+			if errors.Is(err, context.Canceled) {
+				m.logger.Info("LockController", zap.String("status", "closed"))
+				return
+			}
 		}
-		if errors.Is(err, context.Canceled) {
-			return
-		}
-		m.l = lock
-		m.startCond.L.Lock()
-		m.startCond.Broadcast()
-		m.startCond.L.Unlock()
-		err = m.AutoRefresh(ctx, lock, time.Millisecond*300)
-		// todo 错误处理细化: 丢锁，手动停止，服务关闭
-		if errors.Is(err, ErrRefreshFailed) {
-			m.logger.Warn("LockController", zap.String("refresh", "failed"))
-			m.stopCond.L.Lock()
-			m.stopCond.Broadcast()
-			m.stopCond.L.Unlock()
-		}
-		_ = m.l.Unlock(context.WithoutCancel(ctx))
-		m.l = nil
-		m.logger.Info("LockController", zap.String("status", "closed"))
-		return
 	}()
 }
 
