@@ -29,8 +29,6 @@ import (
 	etcd2 "github.com/xuhaidong1/offlinepush/pkg/registry/etcd"
 )
 
-// 运行要加上 --config=conf/dev.toml
-// 并且可以开启环境变量 EGO_DEBUG=true
 func main() {
 	//--初始化三方依赖
 	etcd := ioc.InitEtcd()
@@ -90,14 +88,6 @@ func main() {
 			return
 		}
 	}()
-	//time.Sleep(time.Second * 2)
-	//go func() {
-	//	notifyProducerChan <- pushconfig.PushMap["reboot"]
-	//	// time.Sleep(time.Second)
-	//	// notifyProducerChan <- pushconfig.PushMap["weather"]
-	//	// time.Sleep(time.Second*3)
-	//}()
-	//
 	<-ch
 	gs.Shutdown()
 }

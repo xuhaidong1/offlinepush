@@ -15,7 +15,6 @@ var (
 )
 
 func InitRedis() redis.Cmdable {
-	// 这里演示读取特定的某个字段
 	redisInitOnce.Do(func() {
 		cli := redis.NewClient(&redis.Options{
 			Addr: config.StartConfig.Redis.Addr,

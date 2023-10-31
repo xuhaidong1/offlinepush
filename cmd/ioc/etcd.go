@@ -29,21 +29,14 @@ func InitEtcd() *clientv3.Client {
 }
 
 func PingEtcd(etcd *clientv3.Client) {
-	// 创建一个键值对的上下文
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	// 执行 SET 操作
 	_, err := etcd.Put(ctx, "mykey", "myvalue")
 	if err != nil {
 		panic(err)
 	}
-	// 执行 GET 操作
 	_, err = etcd.Get(ctx, "mykey")
 	if err != nil {
 		panic(err)
 	}
-	// 打印获取到的值
-	//for _, kv := range resp.Kvs {
-	//	fmt.Printf("Key: %s, Value: %s\n", kv.Key, kv.Value)
-	//}
 }
