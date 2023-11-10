@@ -1,0 +1,53 @@
+# Kafka Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: offlinepush-kafka
+  labels:
+    app: offlinepush-kafka
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 9094
+      targetPort: 9094
+  selector:
+    app: offlinepush-kafka
+
+---
+# Kafka Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: offlinepush-kafka
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: offlinepush-kafka
+  template:
+    metadata:
+      labels:
+        app: offlinepush-kafka
+    spec:
+      containers:
+        - name: kafka
+          image: bitnami/kafka:3.6.0
+          ports:
+            - containerPort: 9092
+            - containerPort: 9093
+            - containerPort: 9094
+          env:
+            - name: KAFKA_CFG_NODE_ID
+              value: "0"
+            - name: KAFKA_CFG_PROCESS_ROLES
+              value: "controller,broker"
+            - name: KAFKA_CFG_LISTENERS
+              value: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://:9093,EXTERNAL://0.0.0.0:9094"
+            - name: KAFKA_CFG_ADVERTISED_LISTENERS
+              value: "PLAINTEXT://offlinepush-kafka:9092,EXTERNAL://localhost:9094"
+            - name: KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP
+              value: "CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+            - name: KAFKA_CFG_CONTROLLER_QUORUM_VOTERS
+              value: "0@localhost:9093"
+            - name: KAFKA_CFG_CONTROLLER_LISTENER_NAMES
+              value: "CONTROLLER"

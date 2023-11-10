@@ -26,10 +26,11 @@ import (
 type ConsumeController struct {
 	// 注册中心写 consumeController读出任务来
 	notifyChan  <-chan registry.Event
-	consumer    *Consumer
+	consumer    *WorkerV0
 	repo        repository.ConsumerRepository
 	interceptor *interceptor.Interceptor
 	registry    registry.Registry
+	rgMutex     *sync.Mutex
 	logger      *zap.Logger
 }
 
@@ -38,9 +39,10 @@ func NewConsumeController(ctx context.Context, ch <-chan registry.Event, repo re
 ) *ConsumeController {
 	p := &ConsumeController{
 		notifyChan:  ch,
-		consumer:    NewConsumer(repo, interceptor),
+		consumer:    NewWorkerV0(repo, interceptor),
 		repo:        repo,
 		registry:    rg,
+		rgMutex:     &sync.Mutex{},
 		interceptor: interceptor,
 		logger:      ioc.Logger,
 	}
@@ -120,7 +122,7 @@ func (c *ConsumeController) Assign(ctx context.Context, bizName string) {
 	num := c.CalGoroutineNum(pushconfig.PushMap[bizName].Qps)
 	for i := 0; i < num; i++ {
 		eg.Go(func() error {
-			err := c.consumer.Consume(ctx, dequeueCtx, bizName, finished, queueReady)
+			err := c.consumer.Work(ctx, dequeueCtx, bizName, finished, queueReady)
 			return err
 		})
 	}
@@ -166,6 +168,8 @@ func (c *ConsumeController) CalGoroutineNum(qps int) int {
 
 // SubWeight 开始消费时，减掉权重，消费完成，权重加回去
 func (c *ConsumeController) SubWeight(ctx context.Context, biz string) {
+	c.rgMutex.Lock()
+	defer c.rgMutex.Unlock()
 	service, err := c.registry.ListService(ctx, config.StartConfig.Register.ServiceName+config.StartConfig.Register.PodName)
 	if err != nil {
 		c.logger.Error("ConsumeController", zap.String("Assign", "SubWeight"), zap.Error(err))
@@ -186,6 +190,8 @@ func (c *ConsumeController) SubWeight(ctx context.Context, biz string) {
 }
 
 func (c *ConsumeController) AddWeight(ctx context.Context, biz string) {
+	c.rgMutex.Lock()
+	defer c.rgMutex.Unlock()
 	service, err := c.registry.ListService(ctx, config.StartConfig.Register.ServiceName+config.StartConfig.Register.PodName)
 	if err != nil {
 		c.logger.Error("ConsumeController", zap.String("Assign", "AddWeight"), zap.Error(err))

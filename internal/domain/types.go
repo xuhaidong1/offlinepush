@@ -6,12 +6,6 @@ type Business struct {
 	Domain string `json:"domain"`
 }
 
-// Device 设备类型，id
-type Device struct {
-	Type string `json:"type"`
-	ID   string `json:"id"`
-}
-
 // Message 消息定义
 type Message struct {
 	Business Business `json:"business"`

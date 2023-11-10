@@ -19,15 +19,15 @@ var (
 	Paused    = errors.New("paused")
 )
 
-type Consumer struct {
+type WorkerV0 struct {
 	repo        repository.ConsumerRepository
 	interceptor *interceptor.Interceptor
 	pushLogger  *log.Logger
 	logger      *zap.Logger
 }
 
-func NewConsumer(repo repository.ConsumerRepository, interceptor *interceptor.Interceptor) *Consumer {
-	return &Consumer{
+func NewWorkerV0(repo repository.ConsumerRepository, interceptor *interceptor.Interceptor) *WorkerV0 {
+	return &WorkerV0{
 		repo:        repo,
 		interceptor: interceptor,
 		pushLogger:  ioc.PushLogger,
@@ -35,7 +35,7 @@ func NewConsumer(repo repository.ConsumerRepository, interceptor *interceptor.In
 	}
 }
 
-func (c *Consumer) ConsumeOld(ctx context.Context, bizName string) error {
+func (c *WorkerV0) WorkOld(ctx context.Context, bizName string) error {
 	for {
 		select {
 		case <-ctx.Done():
@@ -48,7 +48,7 @@ func (c *Consumer) ConsumeOld(ctx context.Context, bizName string) error {
 			// todo 本地缓存消费完成后取下一片数据 如果被pause/cancel 需要把这一片的数据写回redis
 			msg, err := c.repo.GetMessageFromStorage(ctx, bizName)
 			if err != nil && !errors.Is(err, NoMessage) {
-				c.logger.Error("Consumer", zap.String("ConsumeOld", "GetMessage"), zap.Error(err))
+				c.logger.Error("WorkerV0", zap.String("WorkOld", "GetMessage"), zap.Error(err))
 				return nil
 			}
 			if errors.Is(err, NoMessage) {
@@ -60,7 +60,7 @@ func (c *Consumer) ConsumeOld(ctx context.Context, bizName string) error {
 	}
 }
 
-func (c *Consumer) Consume(ctx, dequeueCtx context.Context, biz string, finished, queueReady chan struct{}) error {
+func (c *WorkerV0) Work(ctx, dequeueCtx context.Context, biz string, finished, queueReady chan struct{}) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -93,7 +93,7 @@ func (c *Consumer) Consume(ctx, dequeueCtx context.Context, biz string, finished
 	}
 }
 
-func (c *Consumer) Push(msg domain.Message) {
+func (c *WorkerV0) Push(msg domain.Message) {
 	time.Sleep(50 * time.Millisecond)
 	c.pushLogger.Printf("push %v\n", msg)
 }

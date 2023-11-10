@@ -10,6 +10,8 @@ type Config struct {
 	Redis    RedisConfig
 	Etcd     EtcdConfig
 	Register RegisterConfig
+	Kafka    KafkaConfig
+	MySQL    MySQLConfig
 	Lock     LockConfig
 }
 
@@ -23,6 +25,14 @@ type RedisConfig struct {
 	// 消费者/生产者被打断而没完成的生产/消费任务的key
 	ConsumerLeftTaskKey string
 	ProducerLeftTaskKey string
+}
+
+type KafkaConfig struct {
+	Addr string
+}
+
+type MySQLConfig struct {
+	DSN string
 }
 
 type RegisterConfig struct {

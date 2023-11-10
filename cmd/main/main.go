@@ -21,7 +21,6 @@ import (
 	"github.com/xuhaidong1/offlinepush/config"
 	"github.com/xuhaidong1/offlinepush/internal/consumer"
 	consumerrepo "github.com/xuhaidong1/offlinepush/internal/consumer/repository"
-	"github.com/xuhaidong1/offlinepush/internal/loadbalancer"
 	"github.com/xuhaidong1/offlinepush/internal/lock"
 	"github.com/xuhaidong1/offlinepush/internal/producer"
 	producerrepo "github.com/xuhaidong1/offlinepush/internal/producer/repository"
@@ -63,8 +62,6 @@ func main() {
 	// cond用于管理生产者/负载均衡组件的任命/卸任
 	engageCond := cond.NewCondAtomic(&sync.Mutex{})
 	dismissCond := cond.NewCondAtomic(&sync.Mutex{})
-	//----负载均衡控制器初始化----
-	loadbalancer.NewLoadBalanceController(ctx, notifyLoadBalancerChan, engageCond, dismissCond, rg)
 	//----生产者控制器初始化------
 	producerRepo := producerrepo.NewProducerRepository(localCache, rdb)
 	producer.NewProduceController(ctx, notifyProducerChan, notifyLoadBalancerChan, engageCond,

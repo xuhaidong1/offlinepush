@@ -24,4 +24,7 @@ var StartConfig = Config{
 		RefreshInterval: time.Second * 5,
 		Timeout:         time.Millisecond * 200,
 	},
+
+	Kafka: KafkaConfig{Addr: "localhost:9094"},
+	MySQL: MySQLConfig{DSN: "root:root@tcp(offlinepush-mysql-k8s:3306)/offlinepush"},
 }

@@ -1,0 +1,96 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: offlinepush-mysql-k8s
+spec:
+  selector:
+    app: offlinepush-mysql-k8s
+  ports:
+    - protocol: TCP
+      port: 3316
+      targetPort: 3306
+      nodePort: 30306
+  type: NodePort
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: offlinepush-mysql-k8s
+  labels:
+    app: offlinepush-mysql-k8s
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: offlinepush-mysql-k8s
+  template:
+    metadata:
+      name: offlinepush-mysql-k8s
+      labels:
+        app: offlinepush-mysql-k8s
+    spec:
+      containers:
+        - name: offlinepush-mysql-k8s
+          image: mysql:8.0
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              value: root
+          imagePullPolicy: IfNotPresent
+          # 这个container要用哪个持久化卷？从pod提供的卷里面选一个写上
+          #mysql范畴 可以通过修改mysql配置文件来修改这个路径
+          volumeMounts:
+            - mountPath: /var/lib/mysql
+              name: mysql-storage
+          ports:
+            - containerPort: 3306
+      restartPolicy: Always
+#      # pod里面声明的持久化卷
+      volumes:
+        - name: mysql-storage
+          persistentVolumeClaim:
+            claimName: offlinepush-mysql-k8s-claim
+
+---
+# pvc => PersistentVolumeClaim
+apiVersion: v1
+kind: PersistentVolumeClaim
+# 这个声明了mysql需要用的东西
+metadata:
+  name: offlinepush-mysql-k8s-claim
+spec:
+  #可以随便取
+  storageClassName: offlinepush-pv
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 4Gi
+
+---
+apiVersion: v1
+kind: PersistentVolume
+# k8s提供的持久化卷
+metadata:
+  name: k8s-local-pv-offlinepush
+spec:
+  storageClassName: offlinepush-pv
+  capacity:
+    storage: 4Gi
+  accessModes:
+    - ReadWriteOnce
+  local:
+    path: "/Users/xuhaidong/Library/Containers/com.docker.docker/Data/vms/0/data"
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - docker-desktop  #
+#apiVersion: storage.k8s.io/v1
+#kind: StorageClass
+#metadata:
+#  name: offlinepush
+#provisioner: k8s.io/no-provisioner
