@@ -12,13 +12,13 @@ import (
 var ErrDuplicateRecord = errors.New("ErrDuplicateRecord")
 
 type Device struct {
-	ID int64 `gorm:"primaryKey,autoIncrement"`
-	// Type  string `gorm:"not null;type:varchar(16);index;uniqueIndex:type_cid"`
-	// CID   int64  `gorm:"not null;uniqueIndex:type_cid"`
-	Type  string `gorm:"not null;type:varchar(16);"`
-	CID   int64  `gorm:"not null"`
-	Ctime int64  `gorm:"not null;default:0;comment:创建时间"`
-	Utime int64  `gorm:"not null;default:0;comment:更新时间UTC毫秒数"`
+	ID   int64  `gorm:"primaryKey,autoIncrement"`
+	Type string `gorm:"not null;type:varchar(16);index;uniqueIndex:type_cid"`
+	CID  int64  `gorm:"not null;uniqueIndex:type_cid"`
+	// Type  string `gorm:"not null;type:varchar(16);"`
+	// CID   int64  `gorm:"not null"`
+	Ctime int64 `gorm:"not null;default:0;comment:创建时间"`
+	Utime int64 `gorm:"not null;default:0;comment:更新时间UTC毫秒数"`
 }
 
 type DeviceDAO interface {

@@ -105,7 +105,6 @@ func (c *ConsumeController) Schedule(ctx context.Context, wg *sync.WaitGroup) {
 
 // Assign 需要开启goroutine
 func (c *ConsumeController) Assign(ctx context.Context, bizName string) {
-	c.SubWeight(ctx, bizName)
 	c.logger.Info(bizName, zap.String("push", "start"))
 	// 消费完成信号，由读到EOF的consume goroutine关闭
 	finished, queueReady := make(chan struct{}), make(chan struct{})
@@ -155,7 +154,6 @@ func (c *ConsumeController) Assign(ctx context.Context, bizName string) {
 	} else {
 		c.logger.Info(bizName, zap.String("push", "completed"))
 	}
-	c.AddWeight(ctx, bizName)
 }
 
 func (c *ConsumeController) CalGoroutineNum(qps int) int {
@@ -164,51 +162,6 @@ func (c *ConsumeController) CalGoroutineNum(qps int) int {
 	// 一个goroutine在1s能处理的任务数量
 	v := 1000 / NetWorkDelay
 	return qps / v
-}
-
-// SubWeight 开始消费时，减掉权重，消费完成，权重加回去
-func (c *ConsumeController) SubWeight(ctx context.Context, biz string) {
-	c.rgMutex.Lock()
-	defer c.rgMutex.Unlock()
-	service, err := c.registry.ListService(ctx, config.StartConfig.Register.ServiceName+config.StartConfig.Register.PodName)
-	if err != nil {
-		c.logger.Error("ConsumeController", zap.String("Assign", "SubWeight"), zap.Error(err))
-		return
-	}
-	if len(service) != 1 {
-		c.logger.Error("ConsumeController", zap.String("Assign", "SubWeight"), zap.Error(err))
-		return
-	}
-	ins := service[0]
-	ins.Weight -= pushconfig.PushMap[biz].Weight
-	err = c.registry.Register(ctx, ins)
-	if err != nil {
-		c.logger.Error("ConsumeController",
-			zap.String("Assign", "Register SubWeight"),
-			zap.Error(err))
-	}
-}
-
-func (c *ConsumeController) AddWeight(ctx context.Context, biz string) {
-	c.rgMutex.Lock()
-	defer c.rgMutex.Unlock()
-	service, err := c.registry.ListService(ctx, config.StartConfig.Register.ServiceName+config.StartConfig.Register.PodName)
-	if err != nil {
-		c.logger.Error("ConsumeController", zap.String("Assign", "AddWeight"), zap.Error(err))
-		return
-	}
-	if len(service) != 1 {
-		c.logger.Error("ConsumeController", zap.String("Assign", "AddWeight"), zap.Error(err))
-		return
-	}
-	ins := service[0]
-	ins.Weight += pushconfig.PushMap[biz].Weight
-	err = c.registry.Register(ctx, ins)
-	if err != nil {
-		c.logger.Error("ConsumeController",
-			zap.String("Assign", "Register AddWeight"),
-			zap.Error(err))
-	}
 }
 
 func (c *ConsumeController) Pull(ctx context.Context, biz string, queueReady chan struct{}) {
@@ -227,9 +180,6 @@ func (c *ConsumeController) Pull(ctx context.Context, biz string, queueReady cha
 				return
 			}
 			if errors.Is(err, NoMessage) {
-				// 存EOF不应该被取消
-				err = c.repo.StoreMessage(context.WithoutCancel(ctx), domain.GetEOF(biz))
-				return
 			}
 			for i, msg := range msgs {
 				if !c.interceptor.Permit(biz) {

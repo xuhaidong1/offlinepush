@@ -13,7 +13,6 @@ import (
 	"github.com/xuhaidong1/offlinepush/web"
 
 	"github.com/xuhaidong1/offlinepush/config/pushconfig"
-	"github.com/xuhaidong1/offlinepush/internal/cron"
 
 	cond "github.com/xuhaidong1/go-generic-tools/container/queue"
 	"github.com/xuhaidong1/go-generic-tools/redis_lock"
@@ -67,12 +66,12 @@ func main() {
 	producer.NewProduceController(ctx, notifyProducerChan, notifyLoadBalancerChan, engageCond,
 		dismissCond, producerRepo, interceptor)
 	//-----定时任务控制器初始化----
-	cronController := cron.NewCronController(notifyProducerChan)
+	//cronController := cron.NewCronController(notifyProducerChan)
 	//-----锁控制器初始化--------
 	lockController := lock.NewLockController(lockClient, podName, engageCond, dismissCond, config.StartConfig.Lock)
 	lockController.Run(ctx)
 	//----优雅关闭初始化------
-	gs := NewGracefulShutdown(cancel, rg, ins, consumeIns, cronController, ioc.Logger)
+	gs := NewGracefulShutdown(cancel, rg, ins, consumeIns, ioc.Logger)
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGINT)
 	//-----http service初始化----

@@ -27,7 +27,7 @@ func NewProducer(repo repository.ProducerRepository) *Producer {
 
 func (p *Producer) Produce(ctx context.Context, cfg pushconfig.PushConfig) {
 	p.logger.Info("Producer",
-		zap.String("biz", cfg.Business.Name),
+		zap.String("biz", cfg.Topic.Name),
 		zap.String("status", "start"))
 	for _, deviceType := range cfg.DeviceTypeList {
 		n := deviceconfig.DeviceMap[deviceType]
@@ -35,9 +35,9 @@ func (p *Producer) Produce(ctx context.Context, cfg pushconfig.PushConfig) {
 			select {
 			case <-ctx.Done():
 				p.logger.Info("Producer",
-					zap.String("biz", cfg.Business.Name),
+					zap.String("biz", cfg.Topic.Name),
 					zap.String("status", "canceled"))
-				err := p.repo.WriteBackLeftTask(context.Background(), cfg.Business.Name)
+				err := p.repo.WriteBackLeftTask(context.Background(), cfg.Topic.Name)
 				if err != nil {
 					p.logger.Error("Producer", zap.String("Produce", "WriteBackLeftTask"), zap.Error(err))
 				}
@@ -45,7 +45,7 @@ func (p *Producer) Produce(ctx context.Context, cfg pushconfig.PushConfig) {
 				return
 			default:
 				msg := domain.Message{
-					Business: cfg.Business,
+					Topic: cfg.Topic,
 					Device: domain.Device{
 						Type: deviceType,
 						ID:   deviceType + strconv.Itoa(i),
@@ -58,11 +58,11 @@ func (p *Producer) Produce(ctx context.Context, cfg pushconfig.PushConfig) {
 			}
 		}
 	}
-	err := p.repo.WriteBack(ctx, cfg.Business.Name)
+	err := p.repo.WriteBack(ctx, cfg.Topic.Name)
 	if err != nil {
 		p.logger.Error("Producer", zap.String("Produce", "WriteBack"), zap.Error(err))
 	}
 	p.logger.Info("Producer",
-		zap.String("biz", cfg.Business.Name),
+		zap.String("biz", cfg.Topic.Name),
 		zap.String("status", "completed"))
 }

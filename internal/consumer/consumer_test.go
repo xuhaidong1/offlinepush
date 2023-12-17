@@ -204,10 +204,10 @@ func BenchmarkBlockingQ(b *testing.B) {
 		ctx := context.Background()
 		for i := 0; i < msgNum; i++ {
 			err := q.Enqueue(ctx, domain.Message{
-				Business: domain.Business{Name: "bench"},
+				Topic: domain.Topic{Name: "bench"},
 				Device: domain.Device{
 					Type: strconv.Itoa(i),
-					ID:   strconv.Itoa(i),
+					ID:   int64(i),
 				},
 			})
 			if err != nil {
@@ -215,7 +215,7 @@ func BenchmarkBlockingQ(b *testing.B) {
 			}
 		}
 		for k := 0; k < gNum; k++ {
-			err := q.Enqueue(context.Background(), domain.GetEOF("bench"))
+			err := q.Enqueue(context.Background(), GetEOF("bench"))
 			if err != nil {
 				panic(err)
 			}
@@ -244,20 +244,17 @@ func TestBlockingQ(t *testing.T) {
 		ctx := context.Background()
 		for i := 0; i < 102400; i++ {
 			err := q.Enqueue(ctx, domain.Message{
-				Business: domain.Business{Name: "bench"},
+				Topic: domain.Topic{Name: "bench"},
 				Device: domain.Device{
 					Type: strconv.Itoa(i),
-					ID:   strconv.Itoa(i),
+					ID:   0,
 				},
 			})
 			if err != nil {
 				panic(err)
 			}
 		}
-		err := q.Enqueue(context.Background(), domain.GetEOF("bench"))
-		if err != nil {
-			panic(err)
-		}
+
 		wg.Done()
 	}
 
@@ -283,7 +280,7 @@ func (w *Worker) work(wg *sync.WaitGroup, q *queue.ConcurrentBlockingQueue[domai
 		if err != nil {
 			continue
 		}
-		if domain.IsEOF(msg) {
+		if IsEOF(msg) {
 			wg.Done()
 			return
 		}
@@ -338,7 +335,7 @@ func BenchmarkGoroutinePool(b *testing.B) {
 func BenchmarkBlockingQManyTopics(b *testing.B) {
 	gNum := 10000
 	msgNum := 102400
-	EOF := domain.GetEOF("bench")
+	EOF := GetEOF("bench")
 	msgs := make([]domain.Message, 102411)
 	q := queue.NewConcurrentBlockingQueue[domain.Message](gNum)
 	q1 := queue.NewConcurrentBlockingQueue[domain.Message](gNum)

@@ -94,14 +94,6 @@ func NewTask(businessName string) *Task {
 }
 
 func (t *Task) Add(msg domain.Message) {
-	if m, ok := t.DeviceMap[msg.Device.Type]; ok {
-		m = append(m, msg.Device.ID)
-		t.DeviceMap[msg.Device.Type] = m
-	} else {
-		mp := make([]string, 0, 1024)
-		mp = append(mp, msg.Device.ID)
-		t.DeviceMap[msg.Device.Type] = mp
-	}
 }
 
 func (t *Task) Keys(biz string) (res []string) {

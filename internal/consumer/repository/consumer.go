@@ -58,14 +58,12 @@ func (r *consumerRepository) GetMessageFromStorage(ctx context.Context, bizName 
 		// values 包含了 Lua 脚本中返回的多个值
 		if len(values) == 3 {
 			deviceType := values[0].(string)
-			deviceID := values[1].(string)
 			okk := values[2].(string)
 			if okk == "ok" {
 				return domain.Message{
-					Business: pushconfig.PushMap[bizName].Business,
+					Topic: pushconfig.PushMap[bizName].Topic,
 					Device: domain.Device{
 						Type: deviceType,
-						ID:   deviceID,
 					},
 				}, nil
 			} else {
@@ -86,7 +84,7 @@ func (r *consumerRepository) GetMessageFromStorage(ctx context.Context, bizName 
 	//		continue
 	//	}
 	//	return domain.Message{
-	//		Business: pushconfig.PushMap[bizName].Business,
+	//		Topic: pushconfig.PushMap[bizName].Topic,
 	//		Device: domain.Device{
 	//			Type: strings.Split(taskKey, ":")[1],
 	//			ID:   deviceID,
@@ -117,17 +115,6 @@ func (r *consumerRepository) PullMessage(ctx context.Context, biz string) (msgs 
 		if len(values) == 3 {
 			okk := values[2].(string)
 			if okk == "ok" {
-				deviceType := values[0].(string)
-				deviceIDList := values[1].([]any)
-				for _, deviceID := range deviceIDList {
-					msgs = append(msgs, domain.Message{
-						Business: pushconfig.PushMap[biz].Business,
-						Device: domain.Device{
-							Type: deviceType,
-							ID:   deviceID.(string),
-						},
-					})
-				}
 				return msgs, nil
 			} else {
 				return nil, NoMessage

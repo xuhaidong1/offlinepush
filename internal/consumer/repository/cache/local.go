@@ -44,15 +44,15 @@ func NewLocalCache() LocalCache {
 func (l *localCache) RPush(ctx context.Context, msg domain.Message) {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
-	q, ok := l.data[msg.Business.Name]
+	q, ok := l.data[msg.Topic.Name]
 	if !ok {
 		newQ := queue.NewConcurrentQueue[domain.Message](1024)
 		_ = newQ.Enqueue(ctx, msg)
-		l.data[msg.Business.Name] = newQ
+		l.data[msg.Topic.Name] = newQ
 		return
 	}
 	_ = q.Enqueue(ctx, msg)
-	l.data[msg.Business.Name] = q
+	l.data[msg.Topic.Name] = q
 	return
 }
 
@@ -82,11 +82,11 @@ func (l *localCache) Delete(key string) {
 
 func (l *localCache) BRPush(ctx context.Context, msg domain.Message) error {
 	l.mutex.Lock()
-	q, ok := l.bData[msg.Business.Name]
+	q, ok := l.bData[msg.Topic.Name]
 	if !ok {
 		newQ := queue.NewConcurrentBlockingQueue[domain.Message](10240)
 		_ = newQ.Enqueue(ctx, msg)
-		l.bData[msg.Business.Name] = newQ
+		l.bData[msg.Topic.Name] = newQ
 		l.mutex.Unlock()
 		return nil
 	}
@@ -105,23 +105,5 @@ func (l *localCache) BLPop(ctx context.Context, biz string) (domain.Message, err
 }
 
 func (l *localCache) LPopAll(ctx context.Context, biz string) (msgs []domain.Message, err error) {
-	l.mutex.Lock()
-	q, ok := l.bData[biz]
-	l.mutex.Unlock()
-	if !ok {
-		return nil, ErrNoKey
-	}
-	for !q.IsEmpty() {
-		// EOF不一定被写到了本地缓存中，所以不能用EOF判断是否完全出队完毕
-		// EOF被写到了本地缓存中，拿到了EOF则队列一定为空
-		// 队列为空不一定最后一个是EOF，队列中很可能存的是中间某片数据
-		res, er := q.Dequeue(ctx)
-		if er != nil {
-			return nil, er
-		}
-		if !domain.IsEOF(res) {
-			msgs = append(msgs, res)
-		}
-	}
 	return msgs, nil
 }

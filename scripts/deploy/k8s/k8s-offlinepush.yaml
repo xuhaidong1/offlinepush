@@ -34,7 +34,7 @@ spec:
         app: offlinepush
     # pod 的具体规格说明
     spec:
-      #      pod 里面运行的 container
+      # pod 里面运行的 container
       containers:
         - name: offlinepush
           image: xuhaidong/offlinepush:v0.0.60

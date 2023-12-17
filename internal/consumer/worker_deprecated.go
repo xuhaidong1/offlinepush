@@ -83,11 +83,7 @@ func (c *WorkerV0) Work(ctx, dequeueCtx context.Context, biz string, finished, q
 				// 如果是消费完了没有消息了，会走入case <-finished:
 				continue
 			}
-			if domain.IsEOF(msg) {
-				// 后面没消息了，广播告诉其它消费者goroutine退出
-				close(finished)
-				continue
-			}
+
 			c.Push(msg)
 		}
 	}

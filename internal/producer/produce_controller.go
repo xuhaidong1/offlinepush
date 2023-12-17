@@ -124,8 +124,8 @@ func (p *ProduceController) WatchTask(ctx context.Context, wg *sync.WaitGroup) {
 			return
 		case cfg := <-p.notifyProducer:
 			if atomic.LoadInt32(&p.isEngaged) == int32(1) {
-				if !p.interceptor.Permit(cfg.Business.Name) {
-					p.logger.Info("ProduceController", zap.String(cfg.Business.Name, "stopped"))
+				if !p.interceptor.Permit(cfg.Topic.Name) {
+					p.logger.Info("ProduceController", zap.String(cfg.Topic.Name, "stopped"))
 					continue
 				}
 				go p.Assign(watchCtx, cfg)
@@ -162,8 +162,8 @@ func (p *ProduceController) WatchLeftTask(ctx context.Context, wg *sync.WaitGrou
 			if errors.Is(err, redis.Nil) {
 				continue
 			}
-			if !p.interceptor.Permit(cfg.Business.Name) {
-				p.logger.Info("ProduceController", zap.String(cfg.Business.Name, "stopped"))
+			if !p.interceptor.Permit(cfg.Topic.Name) {
+				p.logger.Info("ProduceController", zap.String(cfg.Topic.Name, "stopped"))
 				continue
 			}
 			go p.Assign(watchCtx, cfg)
@@ -173,7 +173,7 @@ func (p *ProduceController) WatchLeftTask(ctx context.Context, wg *sync.WaitGrou
 
 func (p *ProduceController) Assign(ctx context.Context, cfg pushconfig.PushConfig) {
 	produceCtx, cancel := context.WithCancel(ctx)
-	_, loaded := p.CancelFuncs.LoadOrStore(cfg.Business.Name, cancel)
+	_, loaded := p.CancelFuncs.LoadOrStore(cfg.Topic.Name, cancel)
 	// load到说明在生产了，不需要再另开goroutine生产
 	if loaded {
 		return
@@ -181,7 +181,7 @@ func (p *ProduceController) Assign(ctx context.Context, cfg pushconfig.PushConfi
 	producer := p.producers.Get().(*Producer)
 	producer.Produce(produceCtx, cfg)
 	p.producers.Put(producer)
-	p.CancelFuncs.Delete(cfg.Business.Name)
+	p.CancelFuncs.Delete(cfg.Topic.Name)
 	cancel()
 	p.notifyLoadBalancer <- cfg
 }

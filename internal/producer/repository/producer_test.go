@@ -13,7 +13,7 @@ func Test_producerRepository_WriteBackLeftTask(t *testing.T) {
 	//simpleLru, _ := simplelru.NewLRU[string, any](100000, func(key string, value any) {})
 	//cache := elru.NewCache(simpleLru)
 	//msg := domain.Message{
-	//	Business: domain.Business{
+	//	Topic: domain.Topic{
 	//		Name:   "22",
 	//		Domain: "3",
 	//	},
@@ -26,15 +26,15 @@ func Test_producerRepository_WriteBackLeftTask(t *testing.T) {
 	//if err != nil {
 	//	log.Fatalln(err)
 	//}
-	//_, err = cache.LPush(context.Background(), msg.Business.Name, string(msgJson))
-	//_, err = cache.LPush(context.Background(), msg.Business.Name, string(msgJson))
-	//val := cache.LPop(context.Background(), msg.Business.Name)
+	//_, err = cache.LPush(context.Background(), msg.Topic.Name, string(msgJson))
+	//_, err = cache.LPush(context.Background(), msg.Topic.Name, string(msgJson))
+	//val := cache.LPop(context.Background(), msg.Topic.Name)
 	//bytes, err := val.AsBytes()
 	//if err != nil {
 	//	log.Println(1)
 	//	log.Fatalln(err)
 	//}
-	//val = cache.LPop(context.Background(), msg.Business.Name)
+	//val = cache.LPop(context.Background(), msg.Topic.Name)
 	//bytes, err = val.AsBytes()
 	//if err != nil {
 	//	log.Println(2)
