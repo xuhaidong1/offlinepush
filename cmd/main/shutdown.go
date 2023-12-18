@@ -9,22 +9,20 @@ import (
 )
 
 type GracefulShutdown struct {
-	Cancel     context.CancelFunc
-	Registry   registry.Registry
-	instance   registry.ServiceInstance
-	consumeIns registry.ServiceInstance
-	logger     *zap.Logger
+	Cancel   context.CancelFunc
+	Registry registry.Registry
+	instance registry.ServiceInstance
+	logger   *zap.Logger
 }
 
 func NewGracefulShutdown(cancel context.CancelFunc, registry registry.Registry,
-	instance registry.ServiceInstance, consumeIns registry.ServiceInstance, logger *zap.Logger,
+	instance registry.ServiceInstance, logger *zap.Logger,
 ) *GracefulShutdown {
 	return &GracefulShutdown{
-		Cancel:     cancel,
-		Registry:   registry,
-		instance:   instance,
-		consumeIns: consumeIns,
-		logger:     logger,
+		Cancel:   cancel,
+		Registry: registry,
+		instance: instance,
+		logger:   logger,
 	}
 }
 
@@ -32,10 +30,6 @@ func (s *GracefulShutdown) Shutdown() {
 	s.Cancel()
 	s.logger.Info("GracefulShutdown", zap.String("GracefulShutdown", "UnRegister"))
 	err := s.Registry.UnRegister(context.Background(), s.instance)
-	if err != nil {
-		s.logger.Error("GracefulShutdown", zap.Error(err))
-	}
-	err = s.Registry.UnRegister(context.Background(), s.consumeIns)
 	if err != nil {
 		s.logger.Error("GracefulShutdown", zap.Error(err))
 	}

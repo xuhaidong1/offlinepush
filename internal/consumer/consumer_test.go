@@ -215,7 +215,7 @@ func BenchmarkBlockingQ(b *testing.B) {
 			}
 		}
 		for k := 0; k < gNum; k++ {
-			err := q.Enqueue(context.Background(), GetEOF("bench"))
+			err := q.Enqueue(context.Background(), EOF)
 			if err != nil {
 				panic(err)
 			}
@@ -335,7 +335,6 @@ func BenchmarkGoroutinePool(b *testing.B) {
 func BenchmarkBlockingQManyTopics(b *testing.B) {
 	gNum := 10000
 	msgNum := 102400
-	EOF := GetEOF("bench")
 	msgs := make([]domain.Message, 102411)
 	q := queue.NewConcurrentBlockingQueue[domain.Message](gNum)
 	q1 := queue.NewConcurrentBlockingQueue[domain.Message](gNum)
@@ -387,13 +386,13 @@ func BenchmarkBlockingQManyTopics(b *testing.B) {
 }
 
 func BenchmarkPoolManyTopics(b *testing.B) {
-	msgs := make([]domain.Message, 102411)
+	msgs := make([]domain.Message, 1024110)
 	f := func() {
 		wg := &sync.WaitGroup{}
-		runTimes := 102400
+		runTimes := 1024000
 		// Use the MultiPoolFunc and set the capacity of 10 goroutine pools to (runTimes/10).
-		mpf, _ := ants.NewMultiPoolWithFunc(10, -1, func(a interface{}) {
-			time.Sleep(20 * time.Millisecond)
+		mpf, _ := ants.NewMultiPoolWithFunc(20, -1, func(a interface{}) {
+			time.Sleep(200 * time.Millisecond)
 			if _, ok := a.(domain.Message); !ok {
 				panic("!ok")
 			}
@@ -496,7 +495,6 @@ func (c *ConsumerHandler) Setup(session sarama.ConsumerGroupSession) error {
 		session.MarkOffset("test_topic", p, 0, "")
 		session.ResetOffset("test_topic", p, 0, "")
 	}
-
 	return nil
 }
 
@@ -516,4 +514,13 @@ func (c *ConsumerHandler) ConsumeClaim(session sarama.ConsumerGroupSession,
 		session.MarkMessage(msg, "")
 	}
 	return nil
+}
+
+var EOF = domain.Message{
+	Topic:  domain.Topic{Name: "EOF"},
+	Device: domain.Device{},
+}
+
+func IsEOF(m domain.Message) bool {
+	return m.Topic.Name == "EOF"
 }

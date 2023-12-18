@@ -18,8 +18,6 @@ import (
 	"github.com/xuhaidong1/go-generic-tools/redis_lock"
 	"github.com/xuhaidong1/offlinepush/cmd/ioc"
 	"github.com/xuhaidong1/offlinepush/config"
-	"github.com/xuhaidong1/offlinepush/internal/consumer"
-	consumerrepo "github.com/xuhaidong1/offlinepush/internal/consumer/repository"
 	"github.com/xuhaidong1/offlinepush/internal/lock"
 	"github.com/xuhaidong1/offlinepush/internal/producer"
 	producerrepo "github.com/xuhaidong1/offlinepush/internal/producer/repository"
@@ -39,13 +37,11 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	ins, consumeIns, err := RegisterService(ctx, rg)
+	ins, err := RegisterService(ctx, rg)
 	if err != nil {
 		panic(err)
 	}
 	//-------通道/拦截器创建------
-	// 消费者只订阅自己
-	notifyConsumerChan, err := rg.Subscribe(consumeIns.ServiceName)
 	if err != nil {
 		panic(err)
 	}
@@ -53,8 +49,6 @@ func main() {
 	notifyLoadBalancerChan := make(chan pushconfig.PushConfig, 10)
 	interceptor := interceptor2.NewInterceptor(ctx, rg, ioc.Logger)
 	//----消费者初始化-----------------
-	consumeRepo := consumerrepo.NewConsumerRepository(localCache, rdb)
-	consumer.NewConsumeController(ctx, notifyConsumerChan, consumeRepo, interceptor, rg)
 
 	//----分布式锁管理----
 	lockClient := redis_lock.NewClient(rdb)
@@ -71,11 +65,11 @@ func main() {
 	lockController := lock.NewLockController(lockClient, podName, engageCond, dismissCond, config.StartConfig.Lock)
 	lockController.Run(ctx)
 	//----优雅关闭初始化------
-	gs := NewGracefulShutdown(cancel, rg, ins, consumeIns, ioc.Logger)
+	gs := NewGracefulShutdown(cancel, rg, ins, ioc.Logger)
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGINT)
 	//-----http service初始化----
-	pushService := service.NewPushService(notifyProducerChan, interceptor, producerRepo, consumeRepo, rg, ch)
+	pushService := service.NewPushService(notifyProducerChan, interceptor, producerRepo, rg, ch)
 	pushHandler := web.NewPushHandler(pushService)
 	server := ioc.InitWebServer(pushHandler)
 	go func() {
@@ -88,25 +82,14 @@ func main() {
 	gs.Shutdown()
 }
 
-func RegisterService(ctx context.Context, rg registry.Registry) (ins, consumeIns registry.ServiceInstance, err error) {
+func RegisterService(ctx context.Context, rg registry.Registry) (ins registry.ServiceInstance, err error) {
 	ins = registry.ServiceInstance{
 		Address:     config.StartConfig.Register.PodName,
-		ServiceName: config.StartConfig.Register.ServiceName + config.StartConfig.Register.PodName,
-		Weight:      10000,
+		ServiceName: config.StartConfig.Register.ServiceName,
 	}
-	// 这个注册的是服务，生产者调用服务列表的key：config.StartConfig.Register.ServiceName，根据服务weight确定通知的实例。
 	err = rg.Register(ctx, ins)
 	if err != nil {
-		return registry.ServiceInstance{}, registry.ServiceInstance{}, err
+		return registry.ServiceInstance{}, err
 	}
-	consumeIns = registry.ServiceInstance{
-		Address:     config.StartConfig.Register.PodName,
-		ServiceName: config.StartConfig.Register.ConsumerPrefix + config.StartConfig.Register.PodName,
-	}
-	// 这个注册的是消费者抽象，生产者准备好消息-负载均衡-通知这个抽象-消费者收到通知
-	err = rg.Register(ctx, consumeIns)
-	if err != nil {
-		return registry.ServiceInstance{}, registry.ServiceInstance{}, err
-	}
-	return ins, consumeIns, err
+	return ins, err
 }

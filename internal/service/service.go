@@ -7,7 +7,6 @@ import (
 
 	"github.com/xuhaidong1/offlinepush/config"
 	"github.com/xuhaidong1/offlinepush/config/pushconfig"
-	repository2 "github.com/xuhaidong1/offlinepush/internal/consumer/repository"
 	"github.com/xuhaidong1/offlinepush/internal/interceptor"
 	"github.com/xuhaidong1/offlinepush/internal/producer/repository"
 	"github.com/xuhaidong1/offlinepush/pkg/registry"
@@ -26,20 +25,18 @@ type PushService struct {
 	notifyProducer chan<- pushconfig.PushConfig
 	interceptor    *interceptor.Interceptor
 	producerRepo   repository.ProducerRepository
-	consumerRepo   repository2.ConsumerRepository
 	register       registry.Registry
 	shutdownCh     chan os.Signal
 }
 
 func NewPushService(notifyProducer chan<- pushconfig.PushConfig, interceptor *interceptor.Interceptor,
-	producerRepo repository.ProducerRepository, consumerRepo repository2.ConsumerRepository,
+	producerRepo repository.ProducerRepository,
 	register registry.Registry, shutdownCh chan os.Signal,
 ) *PushService {
 	return &PushService{
 		notifyProducer: notifyProducer,
 		interceptor:    interceptor,
 		producerRepo:   producerRepo,
-		consumerRepo:   consumerRepo,
 		register:       register,
 		shutdownCh:     shutdownCh,
 	}
@@ -61,7 +58,7 @@ func (s *PushService) Resume(ctx context.Context, bizName string) error {
 		return err
 	}
 	// 写一个遗留任务到redis，由某个消费者开始消费积压的消息，生产者无需通知，生产者在指定时间生产之前会判断是否允许生产
-	err = s.consumerRepo.WriteBackLeftTask(ctx, bizName)
+	// err = s.consumerRepo.WriteBackLeftTask(ctx, bizName)
 	return err
 }
 

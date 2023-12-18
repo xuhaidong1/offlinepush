@@ -1,7 +1,6 @@
 package component
 
 import (
-	"context"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -67,7 +66,7 @@ func TestProducer(t *testing.T) {
 	}(ctrl)
 	repo := repository.NewRepository(dao.NewGormDeviceDAO(ioc.InitDB()))
 	hasher := NewConsistentHash(servicename, pod, deviceconfig.Devices, rg)
-	NewProducer(context.Background(), repo, kafkaProducer, hasher, crn)
+	NewProducer(repo, kafkaProducer, hasher, crn)
 	time.Sleep(time.Second * 2)
 
 	taskCh <- task

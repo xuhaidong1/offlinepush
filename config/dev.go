@@ -13,7 +13,7 @@ var StartConfig = Config{
 	},
 	Etcd: EtcdConfig{Addr: "localhost:2379"},
 	Register: RegisterConfig{
-		ServiceName:    "offlinepush-service",
+		ServiceName:    "offlinepush-local",
 		ConsumerPrefix: "offlinepush-consumer",
 		InterceptorKey: "offlinepush-interceptor",
 		PodName:        GetPodName(),
@@ -24,6 +24,6 @@ var StartConfig = Config{
 		RefreshInterval: time.Second * 5,
 		Timeout:         time.Millisecond * 200,
 	},
-	Kafka: KafkaConfig{Addr: "offlinepush-kafka:9094"},
+	Kafka: KafkaConfig{Addr: "localhost:9094"},
 	MySQL: MySQLConfig{DSN: "root:root@tcp(localhost:30306)/offlinepush"},
 }

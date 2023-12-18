@@ -2,9 +2,10 @@ package component
 
 import (
 	"context"
-	"encoding/json"
 	"sync"
 	"time"
+
+	"github.com/xuhaidong1/go-generic-tools/pluginsx/saramax"
 
 	"github.com/IBM/sarama"
 	"github.com/xuhaidong1/go-generic-tools/container/slice"
@@ -22,23 +23,30 @@ type Producer struct {
 	repo             repository.Repository
 	producerClient   sarama.SyncProducer
 	responsibleTypes []string
+	hasher           *ConsistentHash
+	cron             Croner
 	// interceptor *interceptor.Interceptor
 	// CancelFuncs *sync.Map
 	logger logx.Logger
 }
 
-func NewProducer(ctx context.Context, repo repository.Repository, producerClient sarama.SyncProducer,
+func NewProducer(repo repository.Repository, producerClient sarama.SyncProducer,
 	hasher *ConsistentHash, cron Croner,
 ) *Producer {
 	p := &Producer{
 		repo:           repo,
 		producerClient: producerClient,
+		hasher:         hasher,
+		cron:           cron,
 		logger:         ioc.Loggerx.With(logx.Field{Key: "component", Value: "Producer"}),
 	}
 	p.responsibleTypes = hasher.GetResponsibleKeys()
-	p.watchResponsibleTypeCh(ctx, hasher)
-	p.watchTaskCh(ctx, cron)
 	return p
+}
+
+func (p *Producer) Run(ctx context.Context) {
+	p.watchResponsibleTypeCh(ctx, p.hasher)
+	p.watchTaskCh(ctx, p.cron)
 }
 
 func (p *Producer) watchResponsibleTypeCh(ctx context.Context, hasher *ConsistentHash) {
@@ -124,7 +132,7 @@ func (p *Producer) send(ctx context.Context, topic domain.Topic, deviceTyp strin
 		for j := 0; j < batchSize && i+j < n; j++ {
 			msgs = append(msgs, &sarama.ProducerMessage{
 				Topic: topic.Name,
-				Value: JSONEncoder{domain.Message{
+				Value: saramax.JSONEncoder{Data: domain.Message{
 					Topic:  topic,
 					Device: devices[i+j],
 				}},
@@ -138,19 +146,6 @@ func (p *Producer) send(ctx context.Context, topic domain.Topic, deviceTyp strin
 		i += batchSize
 	}
 	return nil
-}
-
-type JSONEncoder struct {
-	Data any
-}
-
-func (s JSONEncoder) Encode() ([]byte, error) {
-	return json.Marshal(s.Data)
-}
-
-func (s JSONEncoder) Length() int {
-	b, _ := json.Marshal(s.Data)
-	return len(b)
 }
 
 //func (p *ProduceController) WatchTask(ctx context.Context, Wg *sync.WaitGroup) {
