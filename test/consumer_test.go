@@ -1,4 +1,4 @@
-package component
+package test
 
 import (
 	"context"
@@ -6,6 +6,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/xuhaidong1/offlinepush/internal/component"
 
 	"github.com/xuhaidong1/offlinepush/config"
 	"github.com/xuhaidong1/offlinepush/config/deviceconfig"
@@ -27,7 +29,7 @@ import (
 var pushedCount int32
 
 func TestConsumer(t *testing.T) {
-	num := 1000
+	num := 300
 	reboot := pushconfig.PushMap["reboot"]
 	task := pushconfig.PushConfig{
 		Topic:          reboot.Topic,
@@ -35,18 +37,25 @@ func TestConsumer(t *testing.T) {
 		Cron:           reboot.Cron,
 		Num:            num,
 	}
+	//card := pushconfig.PushMap["card"]
+	//task2 := pushconfig.PushConfig{
+	//	Topic:          card.Topic,
+	//	DeviceTypeList: card.DeviceTypeList,
+	//	Cron:           card.Cron,
+	//	Num:            num,
+	//}
 	taskCh := make(chan pushconfig.PushConfig)
 	ctx := context.Background()
 	// 消费者时间计算不好算
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
-	crn := func(ctrl *gomock.Controller) Croner {
+	crn := func(ctrl *gomock.Controller) component.Croner {
 		c := mocks.NewMockCroner(ctrl)
 		c.EXPECT().Subscribe(gomock.Any()).Return(taskCh)
 		return c
 	}(ctrl)
 
-	hopeCount := int32(num * len(task.DeviceTypeList))
+	hopeCount := int32(num * (len(task.DeviceTypeList)))
 	//--初始化三方依赖
 	etcd := ioc.InitEtcd()
 	kafka := ioc.InitKafka()
@@ -65,15 +74,16 @@ func TestConsumer(t *testing.T) {
 
 	mockWorker := NewMockWorker()
 	repo := repository.NewRepository(dao.NewGormDeviceDAO(ioc.InitDB()))
-	hasher := NewConsistentHash(config.StartConfig.Register.ServiceName, config.StartConfig.Register.PodName, deviceconfig.Devices, rg)
+	counter := component.NewCounter(rg)
+	hasher := component.NewConsistentHash(config.StartConfig.Register.ServiceName, config.StartConfig.Register.PodName, deviceconfig.Devices, rg)
 	kafkaProducer := ioc.NewSyncProducer(kafka)
-	producer := NewProducer(repo, kafkaProducer, hasher, crn)
+	producer := component.NewProducer(repo, kafkaProducer, hasher, crn, counter, rg)
 	producer.Run(ctx)
-	consumer := NewConsumer(kafka, mockWorker)
+	consumer := component.NewConsumer(kafka, mockWorker)
 	consumer.Run(ctx)
-
-	time.Sleep(time.Second * 3)
+	time.Sleep(time.Second * 1)
 	taskCh <- task
+	// taskCh <- task2
 	now := time.Now()
 	quit := make(chan struct{})
 	go func() {
@@ -105,11 +115,11 @@ func TestConsumer(t *testing.T) {
 
 type MockWorker struct{}
 
-func NewMockWorker() Worker {
+func NewMockWorker() component.Worker {
 	return &MockWorker{}
 }
 
-func (w *MockWorker) Work(args Args) {
+func (w *MockWorker) Work(args component.Args) {
 	err := w.Push(args.Msg)
 	args.Wg.Done()
 	if err != nil {
@@ -126,7 +136,7 @@ func (w *MockWorker) Push(msg domain.Message) error {
 func TestConsumerGroup(t *testing.T) {
 	kafka := ioc.InitKafka()
 	mockWorker := NewMockWorker()
-	consumer := NewConsumer(kafka, mockWorker)
+	consumer := component.NewConsumer(kafka, mockWorker)
 	consumer.Run(context.Background())
 	// now := time.Now()
 	// var hopeCount int32 = 24000

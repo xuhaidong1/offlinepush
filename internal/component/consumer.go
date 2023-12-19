@@ -33,7 +33,7 @@ func NewConsumer(client sarama.Client, worker Worker) *Consumer {
 		logger: ioc.Loggerx.With(logx.Field{Key: "component", Value: "Consumer"}),
 	}
 	// Use the MultiPoolFunc and set the capacity of 20 goroutine pools
-	mpf, _ := ants.NewMultiPoolWithFunc(10, -1, func(a interface{}) {
+	mpf, _ := ants.NewMultiPoolWithFunc(30, -1, func(a interface{}) {
 		args := a.(Args)
 		c.worker.Work(args)
 	}, ants.RoundRobin)
@@ -43,22 +43,24 @@ func NewConsumer(client sarama.Client, worker Worker) *Consumer {
 }
 
 func (c *Consumer) Run(ctx context.Context) {
+	topics := make([]string, 0, len(pushconfig.PushMap))
 	for topic := range pushconfig.PushMap {
-		err := c.StartBatch(ctx, topic)
-		if err != nil {
-			panic(err)
-		}
+		topics = append(topics, topic)
+	}
+	err := c.StartBatch(ctx, topics)
+	if err != nil {
+		panic(err)
 	}
 }
 
-func (c *Consumer) StartBatch(ctx context.Context, topic string) error {
-	cg, err := sarama.NewConsumerGroupFromClient(topic+":group", c.client)
+func (c *Consumer) StartBatch(ctx context.Context, topics []string) error {
+	cg, err := sarama.NewConsumerGroupFromClient("offlinepush:group", c.client)
 	if err != nil {
 		return err
 	}
 	const batchSize = 100
 	go func() {
-		er := cg.Consume(ctx, []string{topic},
+		er := cg.Consume(ctx, topics,
 			saramax.NewBatchHandler[domain.Message](c.logger, batchSize, c.BatchConsume,
 				saramax.WithSetup[domain.Message](func(session sarama.ConsumerGroupSession) error {
 					//partitions := session.Claims()[topic]

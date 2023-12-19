@@ -40,6 +40,9 @@ type RegisterConfig struct {
 	ConsumerPrefix string
 	InterceptorKey string
 	PodName        string
+	ManualTaskKey  string
+	ReadCountKey   string
+	WriteCountKey  string
 }
 
 type LockConfig struct {

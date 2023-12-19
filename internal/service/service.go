@@ -2,13 +2,12 @@ package service
 
 import (
 	"context"
-	"os"
-	"syscall"
+	"encoding/json"
+	"errors"
 
 	"github.com/xuhaidong1/offlinepush/config"
 	"github.com/xuhaidong1/offlinepush/config/pushconfig"
-	"github.com/xuhaidong1/offlinepush/internal/interceptor"
-	"github.com/xuhaidong1/offlinepush/internal/producer/repository"
+	"github.com/xuhaidong1/offlinepush/internal/component"
 	"github.com/xuhaidong1/offlinepush/pkg/registry"
 )
 
@@ -22,23 +21,22 @@ import (
 //  8. 查保存进度
 //  9. 删保存进度
 type PushService struct {
-	notifyProducer chan<- pushconfig.PushConfig
-	interceptor    *interceptor.Interceptor
-	producerRepo   repository.ProducerRepository
+	notifyProducer chan pushconfig.PushConfig
+	interceptor    *component.Interceptor
 	register       registry.Registry
-	shutdownCh     chan os.Signal
+	counter        *component.Counter
+	// shutdownCh     chan os.Signal
 }
 
-func NewPushService(notifyProducer chan<- pushconfig.PushConfig, interceptor *interceptor.Interceptor,
-	producerRepo repository.ProducerRepository,
-	register registry.Registry, shutdownCh chan os.Signal,
+func NewPushService(interceptor *component.Interceptor,
+	register registry.Registry, counter *component.Counter,
 ) *PushService {
 	return &PushService{
-		notifyProducer: notifyProducer,
+		notifyProducer: make(chan pushconfig.PushConfig),
 		interceptor:    interceptor,
-		producerRepo:   producerRepo,
 		register:       register,
-		shutdownCh:     shutdownCh,
+		counter:        counter,
+		// shutdownCh:     shutdownCh,
 	}
 }
 
@@ -46,27 +44,60 @@ func (s *PushService) GetBizStatus() map[string]bool {
 	return s.interceptor.GetMap()
 }
 
-// AddTask 开始执行某个业务的推送任务[开始生产-消费]
-func (s *PushService) AddTask(ctx context.Context, bizName string) error {
-	return s.producerRepo.WriteBackLeftTask(ctx, bizName)
+func (s *PushService) ResetCounter(ctx context.Context) error {
+	return s.register.Register(ctx, registry.ServiceInstance{
+		Address:     "",
+		ServiceName: config.StartConfig.Register.WriteCountKey,
+	})
 }
 
-// Resume 恢复某个业务推送
-func (s *PushService) Resume(ctx context.Context, bizName string) error {
-	err := s.interceptor.ResumeBiz(ctx, bizName)
+func (s *PushService) GetCount(ctx context.Context) (map[string]string, error) {
+	res := make(map[string]string)
+	services, err := s.register.ListService(ctx, config.StartConfig.Register.ReadCountKey)
+	if err != nil {
+		return res, err
+	}
+	for _, sv := range services {
+		res[sv.Address] = sv.Note
+	}
+	return res, nil
+}
+
+// AddTask 开始执行某个业务的推送任务[开始生产-消费]
+// todo 幂等性校验 1小时内发送过就不让再发送
+func (s *PushService) AddTask(ctx context.Context, topic string, num int) error {
+	cfg, ok := pushconfig.PushMap[topic]
+	if !ok {
+		return errors.New("topic doesn't exist")
+	}
+	cfg.Num = num
+	marshal, err := json.Marshal(cfg)
 	if err != nil {
 		return err
 	}
-	// 写一个遗留任务到redis，由某个消费者开始消费积压的消息，生产者无需通知，生产者在指定时间生产之前会判断是否允许生产
-	// err = s.consumerRepo.WriteBackLeftTask(ctx, bizName)
-	return err
+	return s.register.Register(ctx, registry.ServiceInstance{
+		Address:     config.StartConfig.Register.PodName,
+		ServiceName: config.StartConfig.Register.ManualTaskKey,
+		Note:        string(marshal),
+	})
 }
 
-// Pause 暂停某个业务推送，生产者；已经在生产的会正常生产完毕，消息存起来；之后到了指定生产时间收到了会收到cron信号，但不会开始生产；人工AddTask也不会生效
-// 消费者：正在消费的正常退出，不需要写回遗留任务；再来新的消费任务也会拒绝。
-func (s *PushService) Pause(ctx context.Context, bizName string) error {
-	return s.interceptor.PauseBiz(ctx, bizName)
-}
+// Resume 恢复某个业务推送，生产者：批准生产；消费者：重新开始监听kafka
+//func (s *PushService) Resume(ctx context.Context, bizName string) error {
+//	err := s.interceptor.ResumeBiz(ctx, bizName)
+//	if err != nil {
+//		return err
+//	}
+//	// 写一个遗留任务到redis，由某个消费者开始消费积压的消息，生产者无需通知，生产者在指定时间生产之前会判断是否允许生产
+//	// err = s.consumerRepo.WriteBackLeftTask(ctx, bizName)
+//	return err
+//}
+
+// Pause 暂停某个业务推送，生产者；停止生产
+// 消费者：sarama停止消费
+//func (s *PushService) Pause(ctx context.Context, bizName string) error {
+//	return s.interceptor.PauseBiz(ctx, bizName)
+//}
 
 func (s *PushService) PodList(ctx context.Context) ([]registry.ServiceInstance, error) {
 	service, err := s.register.ListService(ctx, config.StartConfig.Register.ServiceName)
@@ -76,6 +107,6 @@ func (s *PushService) PodList(ctx context.Context) ([]registry.ServiceInstance, 
 	return service, nil
 }
 
-func (s *PushService) Shutdown() {
-	s.shutdownCh <- syscall.SIGINT
-}
+//func (s *PushService) Shutdown() {
+//	s.shutdownCh <- syscall.SIGINT
+//}

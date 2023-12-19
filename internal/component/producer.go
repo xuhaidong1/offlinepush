@@ -2,8 +2,12 @@ package component
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 	"time"
+
+	"github.com/xuhaidong1/offlinepush/config"
+	"github.com/xuhaidong1/offlinepush/pkg/registry"
 
 	"github.com/xuhaidong1/go-generic-tools/pluginsx/saramax"
 
@@ -25,19 +29,23 @@ type Producer struct {
 	responsibleTypes []string
 	hasher           *ConsistentHash
 	cron             Croner
+	counter          *Counter
+	rg               registry.Registry
 	// interceptor *interceptor.Interceptor
 	// CancelFuncs *sync.Map
 	logger logx.Logger
 }
 
 func NewProducer(repo repository.Repository, producerClient sarama.SyncProducer,
-	hasher *ConsistentHash, cron Croner,
+	hasher *ConsistentHash, cron Croner, counter *Counter, rg registry.Registry,
 ) *Producer {
 	p := &Producer{
 		repo:           repo,
 		producerClient: producerClient,
 		hasher:         hasher,
 		cron:           cron,
+		counter:        counter,
+		rg:             rg,
 		logger:         ioc.Loggerx.With(logx.Field{Key: "component", Value: "Producer"}),
 	}
 	p.responsibleTypes = hasher.GetResponsibleKeys()
@@ -65,12 +73,24 @@ func (p *Producer) watchResponsibleTypeCh(ctx context.Context, hasher *Consisten
 
 func (p *Producer) watchTaskCh(ctx context.Context, cron Croner) {
 	ch := cron.Subscribe(ctx)
+	manualCh, err := p.rg.Subscribe(config.StartConfig.Register.ManualTaskKey)
+	if err != nil {
+		p.logger.Error("subscribe manual taskkey err", logx.Error(err))
+	}
 	go func() {
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case cfg := <-ch:
+				go p.doTask(ctx, cfg)
+			case evt := <-manualCh:
+				var cfg pushconfig.PushConfig
+				er := json.Unmarshal([]byte(evt.Instance.Note), &cfg)
+				if er != nil {
+					p.logger.Error("unmarshal manual task err", logx.Error(er))
+					continue
+				}
 				go p.doTask(ctx, cfg)
 			}
 		}
@@ -96,6 +116,7 @@ func (p *Producer) doTask(ctx context.Context, cfg pushconfig.PushConfig) {
 	if err := eg.Wait(); err != nil {
 		p.logger.Error("producer pool send失败", logx.Error(err))
 	} else {
+		p.counter.AddHopeCount(int64(len(produceTypes) * cfg.Num))
 		p.logger.Info("完成生产", logx.String("topic", cfg.Topic.Name),
 			logx.String("生产用时", time.Since(start).String()),
 			logx.Int64("消息数量", int64(len(produceTypes)*cfg.Num)))

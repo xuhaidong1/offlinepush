@@ -16,6 +16,9 @@ var StartConfig = Config{
 		ServiceName:    "offlinepush-local",
 		ConsumerPrefix: "offlinepush-consumer",
 		InterceptorKey: "offlinepush-interceptor",
+		ManualTaskKey:  "offlinepush-manual",
+		ReadCountKey:   "offlinepush-msg-count",
+		WriteCountKey:  "offlinepush-msg-count-write",
 		PodName:        GetPodName(),
 	},
 	Lock: LockConfig{

@@ -9,6 +9,7 @@ func InitKafka() sarama.Client {
 	addrs := []string{config.StartConfig.Kafka.Addr}
 
 	saramaCfg := sarama.NewConfig()
+	saramaCfg.ClientID = "sarama" + config.StartConfig.Register.PodName
 	saramaCfg.Producer.Return.Successes = true
 	saramaCfg.Producer.RequiredAcks = sarama.WaitForLocal
 	saramaCfg.Producer.Partitioner = sarama.NewRoundRobinPartitioner
