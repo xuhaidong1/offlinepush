@@ -6,6 +6,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/xuhaidong1/offlinepush/internal/prometheus"
+
 	"github.com/gin-gonic/gin"
 	"github.com/xuhaidong1/offlinepush/config/deviceconfig"
 	"github.com/xuhaidong1/offlinepush/internal/component"
@@ -26,6 +28,7 @@ func main() {
 	db := ioc.InitDB()
 	etcd := ioc.InitEtcd()
 	kafka := ioc.InitKafka()
+	prometheus.InitPrometheus()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	//----实例注册-------

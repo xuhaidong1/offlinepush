@@ -30,7 +30,7 @@ func (w *worker) Work(args Args) {
 }
 
 func (w *worker) Push(msg domain.Message) error {
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	// ioc.PushLogger.Printf("push %v\n", msg)
 	return nil
 }

@@ -33,3 +33,7 @@ func Test_init_Insert(t *testing.T) {
 		}
 	}
 }
+
+func TestInitDB(t *testing.T) {
+	InitDB()
+}

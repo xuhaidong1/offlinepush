@@ -11,7 +11,7 @@ type Repository interface {
 	Create(ctx context.Context, d domain.Device) error
 	BatchInsert(ds []domain.Device) error
 	FindDevices(ctx context.Context, typ string) ([]domain.Device, error)
-	FindDevicesLimit(ctx context.Context, typ string, limit int) ([]domain.Device, error)
+	FindDevicesPage(ctx context.Context, typ string, limit int, cursor *dao.Cursor) ([]domain.Device, error)
 }
 
 type repository struct {
@@ -46,8 +46,8 @@ func (r *repository) FindDevices(ctx context.Context, typ string) ([]domain.Devi
 	return dvs, nil
 }
 
-func (r *repository) FindDevicesLimit(ctx context.Context, typ string, limit int) ([]domain.Device, error) {
-	devices, err := r.dao.FindDevicesLimit(ctx, typ, limit)
+func (r *repository) FindDevicesPage(ctx context.Context, typ string, limit int, cursor *dao.Cursor) ([]domain.Device, error) {
+	devices, err := r.dao.FindDevicesPage(ctx, typ, limit, cursor)
 	if err != nil {
 		return nil, err
 	}

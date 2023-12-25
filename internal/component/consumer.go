@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/xuhaidong1/offlinepush/internal/prometheus"
+
 	"github.com/IBM/sarama"
 	"github.com/panjf2000/ants/v2"
 	"github.com/xuhaidong1/go-generic-tools/pluginsx/logx"
@@ -58,7 +60,7 @@ func (c *Consumer) StartBatch(ctx context.Context, topics []string) error {
 	if err != nil {
 		return err
 	}
-	const batchSize = 100
+	const batchSize = 10000
 	go func() {
 		er := cg.Consume(ctx, topics,
 			saramax.NewBatchHandler[domain.Message](c.logger, batchSize, c.BatchConsume,
@@ -90,6 +92,7 @@ func (c *Consumer) BatchConsume(saramaMsgs []*sarama.ConsumerMessage, msgs []dom
 		}
 	}
 	wg.Wait()
+
 	mp := make(map[string]struct{})
 	for _, m := range saramaMsgs {
 		mp[m.Topic+":"+strconv.Itoa(int(m.Partition))] = struct{}{}
@@ -103,6 +106,7 @@ func (c *Consumer) BatchConsume(saramaMsgs []*sarama.ConsumerMessage, msgs []dom
 				}
 				return strings.Join(res, ",")
 			}()))
+		prometheus.MessageGauge.WithLabelValues(msgs[0].Topic.Name).Sub(float64(len(saramaMsgs)))
 	}
 	return nil
 }

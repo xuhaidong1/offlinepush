@@ -6,10 +6,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/xuhaidong1/go-generic-tools/pluginsx/saramax"
+	"github.com/xuhaidong1/offlinepush/internal/prometheus"
+	"github.com/xuhaidong1/offlinepush/internal/repository/dao"
+
 	"github.com/xuhaidong1/offlinepush/config"
 	"github.com/xuhaidong1/offlinepush/pkg/registry"
-
-	"github.com/xuhaidong1/go-generic-tools/pluginsx/saramax"
 
 	"github.com/IBM/sarama"
 	"github.com/xuhaidong1/go-generic-tools/container/slice"
@@ -110,7 +112,7 @@ func (p *Producer) doTask(ctx context.Context, cfg pushconfig.PushConfig) {
 	for _, typ := range produceTypes {
 		t := typ
 		eg.Go(func() error {
-			return p.send(ctx, cfg.Topic, t, cfg.Num)
+			return p.ReadAndSend(ctx, cfg.Topic, t, cfg.Num)
 		})
 	}
 	if err := eg.Wait(); err != nil {
@@ -133,37 +135,36 @@ type ProducerPoolArgs struct {
 	Wg        *sync.WaitGroup
 }
 
-func (p *Producer) send(ctx context.Context, topic domain.Topic, deviceTyp string, limit int) error {
-	var devices []domain.Device
-	var err error
-	if limit < 0 {
-		devices, err = p.repo.FindDevices(ctx, deviceTyp)
-	} else {
-		devices, err = p.repo.FindDevicesLimit(ctx, deviceTyp, limit)
-	}
-	if err != nil {
-		p.logger.Error("查询设备列表失败", logx.Error(err))
-		return err
-	}
+func (p *Producer) ReadAndSend(ctx context.Context, topic domain.Topic, deviceTyp string, num int) error {
 	const batchSize = 100
-	n := len(devices)
 	i := 0
-	for i < n {
+	cursor := &dao.Cursor{}
+	for i < num {
+		limit := batchSize
+		if (num - i) < batchSize {
+			limit = num - i
+		}
+		devices, err := p.repo.FindDevicesPage(ctx, deviceTyp, limit, cursor)
+		if err != nil {
+			p.logger.Error("查询设备列表失败", logx.Error(err))
+			return err
+		}
 		msgs := make([]*sarama.ProducerMessage, 0, batchSize)
-		for j := 0; j < batchSize && i+j < n; j++ {
+		for j := 0; j < len(devices); j++ {
 			msgs = append(msgs, &sarama.ProducerMessage{
 				Topic: topic.Name,
 				Value: saramax.JSONEncoder{Data: domain.Message{
 					Topic:  topic,
-					Device: devices[i+j],
+					Device: devices[j],
 				}},
 			})
 		}
-		er := p.producerClient.SendMessages(msgs)
-		if er != nil {
+		err = p.producerClient.SendMessages(msgs)
+		if err != nil {
 			p.logger.Error("发送消息到kafka失败", logx.Error(err))
 			return err
 		}
+		prometheus.MessageGauge.WithLabelValues(topic.Name).Add(float64(len(msgs)))
 		i += batchSize
 	}
 	return nil

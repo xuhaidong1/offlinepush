@@ -4,6 +4,9 @@ metadata:
   #  代表这是 offlinepush 本体
   name: offlinepush
 #  规格说明，也即是详细说明这个服务是一个怎样的服务
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8087"
 spec:
   #  如果想要外部直接访问，就用这个
   type: NodePort
@@ -14,6 +17,11 @@ spec:
       port: 85
       protocol: TCP
       targetPort: 8085
+    - name: metric
+      port: 87
+      protocol: TCP
+      targetPort: 8087
+
 ---
 # 如何解释这一份配置，或者说怎么处理这一份配置
 apiVersion: apps/v1
@@ -23,7 +31,7 @@ metadata:
   #  也叫做 offlinepush，但这是一个 Deployment
   name: offlinepush
 spec:
-  replicas: 3
+  replicas: 0
   selector:
     matchLabels:
       app:  offlinepush
@@ -37,10 +45,11 @@ spec:
       #      pod 里面运行的 container
       containers:
         - name: offlinepush
-          image: xuhaidong/offlinepush:v0.0.68
+          image: xuhaidong/offlinepush:v0.0.75
           env:
             - name: TZ
               value: "Asia/Shanghai"
           ports:
             #   在我们的 main 函数里面我写死了 8085，所以这里也要写 8085
             - containerPort: 8085
+            - containerPort: 8087

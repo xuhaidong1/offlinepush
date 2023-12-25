@@ -24,18 +24,15 @@ services:
 #        - 12000:8080
 #      depends_on:
 #        - etcd
-  kafka-console-ui:
-    # 容器名
-    container_name: "kafka-console-ui"
-    # 端口
+  grafana:
+    image: grafana/grafana-enterprise:10.2.0
     ports:
-      - "7766:7766"
-    # 持久化
+      - 3000:3000
+  prometheus:
+    image: prom/prometheus:v2.47.2
     volumes:
-      - ./data:/app/data
-      - ./log:/app/log
-    # 防止读写文件有问题
-    privileged: true
-    user: root
-    # 镜像地址
-    image: "wdkang/kafka-console-ui"
+      #      - 将本地的 prometheus 文件映射到容器内的配置文件
+      - ./prometheus.yaml:/etc/prometheus/prometheus.yml
+    ports:
+      #      - 访问数据的端口
+      - 9990:9090

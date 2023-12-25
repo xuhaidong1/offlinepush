@@ -99,10 +99,12 @@ deploy_image_update:
 
 .PHONY: deploy_3rd
 deploy_3rd:
-	@kubectl apply -f $(SCRIPTS_PATH)/deploy/k8s/k8s-redis.yaml
+	@kubectl apply -f  $(SCRIPTS_PATH)/deploy/k8s/k8s-redis.yaml
 	@kubectl apply -f  $(SCRIPTS_PATH)/deploy/k8s/k8s-etcd.yaml
 	@kubectl apply -f  $(SCRIPTS_PATH)/deploy/k8s/k8s-kafka.yaml
 	@kubectl apply -f  $(SCRIPTS_PATH)/deploy/k8s/k8s-mysql.yaml
+	@kubectl apply -f  $(SCRIPTS_PATH)/deploy/k8s/k8s-prometheus.yaml
+	@kubectl apply -f  $(SCRIPTS_PATH)/deploy/k8s/k8s-grafana.yaml
 
 .PHONY: deploy_k8s
 deploy_k8s:

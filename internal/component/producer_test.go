@@ -66,9 +66,8 @@ func TestProducer(t *testing.T) {
 	}(ctrl)
 	repo := repository.NewRepository(dao.NewGormDeviceDAO(ioc.InitDB()))
 	hasher := NewConsistentHash(servicename, pod, deviceconfig.Devices, rg)
-	NewProducer(repo, kafkaProducer, hasher, crn)
+	NewProducer(repo, kafkaProducer, hasher, crn, NewCounter(rg), rg)
 	time.Sleep(time.Second * 2)
-
 	taskCh <- task
 	time.Sleep(time.Second * 5)
 	assert.Equal(t, int32(num*len(task.DeviceTypeList)), msgCount)
